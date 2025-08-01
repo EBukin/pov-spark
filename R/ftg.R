@@ -95,6 +95,19 @@ get_pov__dplyr_nopmax <- function(dta, pl) {
   select(country, year, hc = hc0, ftg0, ftg1, ftg2, gini)
 }
 
+get_pov__dplyr_gini <- function(dta, pl) {
+  dta  |>
+  mutate(
+    cum_pop = cumsum(weight / sum(weight)),
+    cum_inc = cumsum(welfare * weight) / sum(welfare * weight)
+  ) |> 
+  summarise(
+    gini  =  sum(cum_inc[-1] * cum_pop[-n()]) - sum(cum_inc[-n()] * cum_pop[-1]),
+    .groups = "drop"
+  ) |> 
+  select(country, year, gini)
+}
+
 
 get_pov__dplyr_nogini <- function(dta, pl) {
   dta  |>
@@ -141,6 +154,29 @@ get_pov__DT <- function(dta, pl, groups = c("country", "year")) {
       gini = gini1 - gini2
     ) |> 
     fselect(country, year, hc, ftg0, ftg1, ftg2, gini)
+}
+
+
+get_pov__DT_gini <- function(dta, pl, groups = c("country", "year")) {
+   dta[,
+    `:=`(c( "gini1", "gini2"), {
+      cum_pop <- cumsum(weight) / sum(weight)
+      cum_inc <- cumsum(welfare * weight) / sum(welfare * weight)
+      gini1 = shift(cum_inc, n = 1, fill = NA_real_, type = "lead") * cum_pop
+      gini2 = shift(cum_inc, n = 1, fill = NA_real_, type = "lag") * cum_pop
+      .(gini1, gini2)
+    }),
+    by = groups
+  ] 
+  
+  dta |> 
+    gby(groups) |> 
+    gv(c("gini1", "gini2")) |> 
+    fsum() |> 
+    fmutate(
+      gini = gini1 - gini2
+    ) |> 
+    fselect(country, year, gini)
 }
 
 get_pov__DT_nogini <- function(dta, pl, groups = c("country", "year")) {

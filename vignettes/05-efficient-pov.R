@@ -130,23 +130,23 @@ dbGetQuery(conn = con, "SELECT current_setting('memory_limit') AS memlimit")
 # CREATE TABLE sample_1m AS
 #     SELECT * FROM read_parquet('data/sample_1m/**/*.parquet');
 #     ")
-
 # dbExecute(con, "
 # CREATE TABLE sample_5m AS
 #     SELECT * FROM read_parquet('data/sample_5m/**/*.parquet');
 #     ")
-
 # dbExecute(con, "
 # CREATE TABLE sample_50m AS
 #     SELECT * FROM read_parquet('data/sample_50m/**/*.parquet');
 #     ")
-
-    
 # dbExecute(con, "
 # CREATE TABLE sample_250m AS
 #     SELECT * FROM read_parquet('data/sample_250m/**/*.parquet');
 #     ")
-
+dbSendQuery(conn = con, "ANALYZE sample_250m ")
+dbSendQuery(conn = con, "ANALYZE sample_50m ")
+dbSendQuery(conn = con, "ANALYZE sample_5m ")
+dbSendQuery(conn = con, "ANALYZE sample_1m ")
+dbSendQuery(conn = con, "VACUUM")
 
 ## Simple calculations ------------------------------------------------------
 db_dta <- tbl(con, "sample_5m")
@@ -158,7 +158,6 @@ get_pov__duckdb_nogini <- function(con, tbl_name, pl = 100) {
     arrange(country, year) |>
     collect()    
 }
-
 
 get_pov__duckdb_gini <- function(con, tbl_name) {
   tbl(con, tbl_name) |>
@@ -175,10 +174,11 @@ get_pov__duckdb_gini <- function(con, tbl_name) {
       .groups = "drop"
     ) |>
     select(country, year, gini) |> 
+    arrange(country, year) |>
     collect()
 }
 
-get_gini_sql <- function(tbl_name = "sample_50m", ending = "") {
+get_pov__duckdb_gini_sql <- function(tbl_name = "sample_50m", ending = "") {
 glue(
   "WITH sorted AS (
   SELECT
@@ -230,18 +230,24 @@ GROUP BY country, year
 get_pov__duckdb_nogini(con, "sample_5m") |> 
   all.equal(get_pov__dplyr_nogini(group_by(dta_5m, country, year), 100))
 
-get_pov__dplyr(group_by(dta_5m, country, year), 100) |> 
+# Gini 
+get_pov__dplyr(group_by(dta_1m, country, year), 100) |> 
   select(country, year, gini) |> 
-  all.equal(get_pov__duckdb_gini(con, "sample_5m"))
+  all.equal(get_pov__duckdb_gini(con, "sample_1m"))
 
-dc_tbl <- tbl(con, "sample_50m") |> group_by(country, year) 
-    arrange(country, year, welfare)
+dc_tbl <- tbl(con, "sample_50m") |> group_by(country, year) |> arrange(country, year, welfare)
 
-dbGetQuery(con, get_gini_sql("sample_5m")) |> 
-  as_tibble() |> 
-  all.equal(get_pov__duckdb_gini(con, "sample_50m"))
+dbGetQuery(con, get_pov__duckdb_gini_sql("sample_1m")) |> as_tibble() |> 
+  all.equal(get_pov__duckdb_gini(con, "sample_1m"))
 
+# GINI benchmarking --------------------------------------------------------
 
+microbenchmark(
+  get_pov__duckdb_gini(con, "sample_5m"),
+  dbGetQuery(con, get_pov__duckdb_gini_sql("sample_5m")) ,
+  get_pov__duckdb_gini(con, "sample_5m"),
+  times = 2
+)
 dc_tbl |> show_query()
 
 # dc_tbl |> get_pov_slow__dplyr(150)
@@ -255,17 +261,34 @@ dc_tbl |> show_query()
 # )
 
 # # GIni calculation benchmarking ---------------------------------------------
-microbenchmark(
-  get_pov__duckdb_nogini(con, "sample_5m"),
-  dbGetQuery(con, get_gini_sql("sample_5m")) ,
-  get_pov__duckdb_gini(con, "sample_5m"),
-  times = 2
-)
+# microbenchmark(
+#   get_pov__duckdb_nogini(con, "sample_5m"),
+#   dbGetQuery(con, get_gini_sql("sample_5m")),
+#   get_pov__dplyr_gini(group_by(dta_5m, country, year), 250),
+#   get_pov__DT_gini(qDT(dta_5m), 250),
+#   times = 5
+# )
 # # Unit: milliseconds
-# #                                        expr      min       lq      mean    median        uq       max neval
-# #    get_pov__duckdb_nogini(con, "sample_5m")  232.229  232.229  234.9159  234.9159  237.6028  237.6028     2
-# #  dbGetQuery(con, get_gini_sql("sample_5m")) 2995.951 2995.951 3092.1004 3092.1004 3188.2497 3188.2497     2
-# #      get_pov__duckdb_gini(con, "sample_5m") 3736.323 3736.323 3788.2528 3788.2528 3840.1830 3840.1830     2
+# #                                                       expr      min        lq      mean    median        uq       max neval
+# #                   get_pov__duckdb_nogini(con, "sample_5m") 172.5235  284.0126  843.0134  285.3887  933.9420 2539.2000     5
+# #                 dbGetQuery(con, get_gini_sql("sample_5m")) 983.7482 2178.6112 2449.3700 2224.5080 3413.0493 3446.9334     5
+# #  get_pov__dplyr_gini(group_by(dta_5m, country, year), 250) 441.1253  457.7111  507.2195  471.8237  513.8532  651.5843     5
+# #                         get_pov__DT_gini(qDT(dta_5m), 250) 259.0870  273.1081  299.3214  288.1846  334.5557  341.6715     5
+
+# microbenchmark(
+#   get_pov__duckdb_nogini(con, "sample_50m"),
+#   dbGetQuery(con, get_gini_sql("sample_50m")),
+#   get_pov__dplyr_gini(group_by(dta_50m, country, year), 250),
+#   get_pov__DT_gini(qDT(dta_50m), 250),
+#   times = 5
+# )
+                     
+# # Unit: milliseconds
+# #                                                        expr       min        lq       mean     median         uq       max neval
+# #                   get_pov__duckdb_nogini(con, "sample_50m")   345.894   426.507   641.6816   434.9969   510.7332  1490.277     5
+# #                 dbGetQuery(con, get_gini_sql("sample_50m")) 40397.658 40426.736 41421.6344 41705.5015 41991.2541 42587.022     5
+# #  get_pov__dplyr_gini(group_by(dta_50m, country, year), 250)  4739.226  5529.923  5942.5712  6270.3551  6350.7641  6822.588     5
+# #                         get_pov__DT_gini(qDT(dta_50m), 250)  3282.670  3354.901  3615.8332  3361.5345  3506.0347  4574.026     5
 
 
 # microbenchmark(
@@ -312,19 +335,23 @@ microbenchmark(
 
 
 # # ## 250m Benchmarking DuckDB vs DPLYR vs DT --------------------------------------------
-# dta_250m <- open_dataset("data/sample_250m") |> collect()
-# microbenchmark(
-#   get_pov__dplyr_nogini(group_by(dta_250m, country, year) , 250),
-#   get_pov__DT_nogini(qDT(dta_250m), 250),
-#   collect(get_pov__duckdb_nogini(con, "sample_250m", 250)),
-#   times = 5
-# )
-# # Unit: milliseconds
-# #                                                           expr        min         lq       mean     median         uq      max neval
-# #  get_pov__dplyr_nogini(group_by(dta_250m, country, year), 250) 11462.9905 11875.5468 11958.6597 12122.9275 12142.8200 12189.01     5
-# #                         get_pov__DT_nogini(qDT(dta_250m), 250)  8152.6180  8697.7525  9067.9570  8977.1777  8996.3822 10515.85     5
-# #       collect(get_pov__duckdb_nogini(con, "sample_250m", 250))   192.0631   195.0852   416.2085   209.4305   222.8341  1261.63     5
+dta_250m <- open_dataset("data/sample_250m") |> collect()
+microbenchmark(
+  get_pov__dplyr_nogini(group_by(dta_250m, country, year) , 250),
+  get_pov__DT_nogini(qDT(dta_250m), 250),
+  collect(get_pov__duckdb_nogini(con, "sample_250m", 250)),
+  times = 10
+)
+# Unit: milliseconds
+#                                                           expr        min         lq       mean     median         uq      max neval
+#  get_pov__dplyr_nogini(group_by(dta_250m, country, year), 250) 11462.9905 11875.5468 11958.6597 12122.9275 12142.8200 12189.01     5
+#                         get_pov__DT_nogini(qDT(dta_250m), 250)  8152.6180  8697.7525  9067.9570  8977.1777  8996.3822 10515.85     5
+#       collect(get_pov__duckdb_nogini(con, "sample_250m", 250))   192.0631   195.0852   416.2085   209.4305   222.8341  1261.63     5
 
+
+# Unit: milliseconds
+#                                                      expr     min       lq     mean  median       uq      max neval
+#  collect(get_pov__duckdb_nogini(con, "sample_250m", 250)) 545.652 547.8167 559.6979 554.418 572.3076 581.6258    10
 
 
 
