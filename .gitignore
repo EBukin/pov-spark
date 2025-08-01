@@ -6,3 +6,7 @@ renv/
 *.parquet
 metastore_db/
 *.log
+
+*.duckdb*
+*.wal
+*.tmp/

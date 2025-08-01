@@ -6,30 +6,52 @@ get_pov_slow__dplyr <- function(dta, pl) {
   arrange(country, year, welfare) |>
   mutate(
     poor = as.integer(welfare <= pl),
-    hc = poor * weight,
-    wmax = hc * (pl - welfare),
+    hc0 = poor * weight,
+    # wmax = hc * (pl - welfare),
     cum_pop = cumsum(weight ) / sum(weight),
-    cum_inc = cumsum(welfare * weight) / sum(welfare * weight)
-  ) |> 
-  mutate(
+    cum_inc = cumsum(welfare * weight) / sum(welfare * weight),
     cum_inc_lead = dplyr::lead(cum_inc, default = 0),
-    cum_inc_lag = dplyr::lag(cum_inc, default = 0),
-    gini1 = sum(cum_inc_lead * cum_pop, na.rm = T),
-    gini2 = sum(cum_inc_lag * cum_pop, na.rm = T),
+    cum_inc_lag = dplyr::lag(cum_inc, default = 0)
   ) |> 
   summarise(
-    hc = sum(hc),
-    weight = sum(weight),
-    wmax = sum(wmax),
-    gini1 = sum(cum_inc_lead * cum_pop, na.rm = T),
-    gini2 = sum(cum_inc_lag * cum_pop, na.rm = T),
+    hc = sum(hc0, na.rm = TRUE),
+    weight = sum(weight, na.rm = TRUE),
+    wmax = sum(hc0 * (pl - welfare), na.rm = TRUE),
+    gini = sum(cum_inc_lead * cum_pop, na.rm = T) - sum(cum_inc_lag * cum_pop, na.rm = T),
     .groups = "drop"
   ) |> 
   mutate(
     ftg0 = hc / weight,
     ftg1 = wmax / weight / pl,
+    ftg2 = ftg1 ^ 2
+  ) |> 
+  select(country, year, hc, ftg0, ftg1, ftg2, gini)
+}
+
+get_pov_slow2__dplyr <- function(dta, pl) {
+  dta |> 
+  group_by(country, year) |>
+  arrange(country, year, welfare) |>
+  mutate(
+    poor = as.integer(welfare <= pl),
+    hc0 = poor * weight,
+    # wmax = hc * (pl - welfare),
+    cum_pop = cumsum(weight ) / sum(weight),
+    cum_inc = cumsum(welfare * weight) / sum(welfare * weight),
+    cum_inc_lead = dplyr::lead(cum_inc, default = 0),
+    cum_inc_lag = dplyr::lag(cum_inc, default = 0)
+  ) |> 
+  summarise(
+    hc = sum(hc0, na.rm = TRUE),
+    ftg0 = sum(hc0, na.rm = TRUE) / sum(weight, na.rm = TRUE),
+    # wmax = sum(hc0 * (pl - welfare), na.rm = TRUE),
+    ftg1 = sum(hc0 * (pl - welfare), na.rm = TRUE) / sum(weight, na.rm = TRUE) / pl,
+    gini = sum(cum_inc_lead * cum_pop, na.rm = T) - sum(cum_inc_lag * cum_pop, na.rm = T),
+    .groups = "drop"
+  ) |> 
+  mutate(
+    # ftg0 = hc / weight,
     ftg2 = ftg1 ^ 2,
-    gini = gini1 - gini2
   ) |> 
   select(country, year, hc, ftg0, ftg1, ftg2, gini)
 }
