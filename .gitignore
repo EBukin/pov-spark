@@ -10,3 +10,4 @@ metastore_db/
 *.duckdb*
 *.wal
 *.tmp/
+man/
