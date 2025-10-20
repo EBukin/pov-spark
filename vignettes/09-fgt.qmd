@@ -1,0 +1,177 @@
+---
+title: "Testing random access to the data performance"
+editor: source
+---
+
+```{r}
+pkgload::load_all()
+library(microbenchmark)
+library(bench)
+```
+
+## Read random countries/years/areas/genders/ages from the data
+
+```{r eval=FALSE}
+library(purrr)
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
+library(DBI)
+library(duckdb)
+library(dbplyr)
+library(duckplyr)
+library(here)
+library(glue)
+
+
+pqt_fldr <- here("data-testing")
+# pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+duck_fldr <- here("data-testing-duck")
+
+from_files <- list.dirs(pqt_fldr, recursive = FALSE, full.names = F) |> sort()
+
+# Get a random sample of queries
+dta <- here(pqt_fldr, from_files[[1]]) |> arrow::open_dataset()
+
+# # Setting the random access options
+# set.seed(12345)
+# n <- 10
+# n_size <- 50
+# all_samples_files <-
+#   from_files |>
+#   map(
+#     ~ {
+#       all_options <- here(pqt_fldr, .x) |>
+#         arrow::open_dataset() |>
+#         distinct(country, year, area, gender, age) |>
+#         collect()
+#       1:n |> map(~ sample_n(all_options, n_size))
+#     }
+#   )
+
+# using built-in arrow functions -------------------------------------------
+get_pqt_data <- \(con_tbl, one_sample) {
+  con_tbl |>
+    semi_join(
+      one_sample,
+      by = c("country", "year", "area", "gender", "age"),
+      copy = TRUE
+    )
+}
+
+dta <-
+  here("data-testing", from_files[[2]]) |>
+  arrow::open_dataset() |>
+  collect()
+
+
+dta$welfare |> fgt_collapse()
+dta$welfare |> fgt_base()
+
+library(data.table)
+library(collapse)
+
+get_fgt_collapse <- \(x) {
+  x |>
+    fgroup_by(country, year) |>
+    fsummarise(
+      fgt0 = fgt_collapse(welfare, weight, alpha = 0),
+      fgt1 = fgt_collapse(welfare, weight, alpha = 1),
+      fgt2 = fgt_collapse(welfare, weight, alpha = 2)
+    )
+}
+
+
+get_fgt_DT <- \(x) {
+  x[,
+    .(
+      fgt0 = fgt_collapse(welfare, weight, alpha = 0),
+      fgt1 = fgt_collapse(welfare, weight, alpha = 1),
+      fgt2 = fgt_collapse(welfare, weight, alpha = 2)
+    ),
+    keyby = .(country, year)
+  ]
+}
+
+
+get_fgt_DT(copy(qDT(dta)))
+get_fgt_DT(copy(qDT(dta)))
+
+
+here("data-testing") |> 
+  list.dirs(recursive = FALSE) |>
+  purrr::walk(
+    ~ {
+      dta <- arrow::open_dataset(.x) |> collect() |> qDT()
+      # gg <- dta |> fgroup_by(country, year)
+      setkey(dta, country, year)
+      setindex(dta, country, year, area, gender, age)
+
+      md_out <-
+        bench::mark(
+          get_fgt_collapse(dta),
+          get_fgt_DT(copy(dta)),
+          iterations = 3,
+          check = FALSE
+        )
+      cat("\n\n\n")
+      cat(.x, "\n")
+      print(md_out |> select(expression,  min, median, mem_alloc))
+    }
+  )
+
+```
+
+
+```
+C:/Users/wb532966/eb-local/povspark/data-testing/sample_00001k 
+# A tibble: 2 × 4
+  expression                 min   median mem_alloc
+  <bch:expr>            <bch:tm> <bch:tm> <bch:byt>
+1 get_fgt_collapse(dta)    356µs    399µs     169KB
+2 get_fgt_DT(copy(dta))    676µs    719µs     252KB
+
+
+
+C:/Users/wb532966/eb-local/povspark/data-testing/sample_0001m 
+# A tibble: 2 × 4
+  expression                 min   median mem_alloc
+  <bch:expr>            <bch:tm> <bch:tm> <bch:byt>
+1 get_fgt_collapse(dta)    136ms    151ms     157MB
+2 get_fgt_DT(copy(dta))    134ms    141ms     130MB
+
+
+
+C:/Users/wb532966/eb-local/povspark/data-testing/sample_0005m 
+# A tibble: 2 × 4
+  expression                 min   median mem_alloc
+  <bch:expr>            <bch:tm> <bch:tm> <bch:byt>
+1 get_fgt_collapse(dta)    632ms    652ms     783MB
+2 get_fgt_DT(copy(dta))    665ms    817ms     650MB
+Processed 558 groups out of 558. 100% done. Time elapsed: 4s. ETA: 0s.
+Processed 558 groups out of 558. 100% done. Time elapsed: 5s. ETA: 0s.
+Processed 558 groups out of 558. 100% done. Time elapsed: 5s. ETA: 0s.
+Processed 558 groups out of 558. 100% done. Time elapsed: 5s. ETA: 0s.
+
+
+
+C:/Users/wb532966/eb-local/povspark/data-testing/sample_0050m 
+# A tibble: 2 × 4
+  expression                 min   median mem_alloc
+  <bch:expr>            <bch:tm> <bch:tm> <bch:byt>
+1 get_fgt_collapse(dta)    6.09s    6.29s    7.64GB
+2 get_fgt_DT(copy(dta))    6.29s    6.32s    6.34GB
+Processed 588 groups out of 588. 100% done. Time elapsed: 13s. ETA: 0s.
+Processed 588 groups out of 588. 100% done. Time elapsed: 13s. ETA: 0s.
+Processed 588 groups out of 588. 100% done. Time elapsed: 13s. ETA: 0s.
+Processed 588 groups out of 588. 100% done. Time elapsed: 13s. ETA: 0s.
+
+
+
+C:/Users/wb532966/eb-local/povspark/data-testing/sample_0150m 
+# A tibble: 2 × 4
+  expression                 min   median mem_alloc
+  <bch:expr>            <bch:tm> <bch:tm> <bch:byt>
+1 get_fgt_collapse(dta)    16.8s    17.4s    22.9GB
+2 get_fgt_DT(copy(dta))    17.4s    17.4s      19GB
+
+```

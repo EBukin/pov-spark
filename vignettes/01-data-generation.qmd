@@ -176,3 +176,54 @@ list.dirs("data-testing", recursive = FALSE) |>
 ```
 
 
+## Resaving data in duckdb format
+
+```{r duck-db-setup, eval=FALSE}
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
+library(DBI)
+library(duckdb)
+library(dbplyr)
+library(duckplyr)
+library(here)
+library(glue)
+
+
+pkt_fldr <- here("data-testing")
+duck_fldr <- here("data-testing-duck")
+dir.create(duck_fldr)
+
+
+from_file <- list.dirs(pkt_fldr, recursive = FALSE, full.names = F) |> sort()
+from_pkt <- from_file[[2]]
+
+# duck_dr <- duckdb(file.path("data-testing-duck", paste(from_pkt, ".duckdb")))
+# con <- dbConnect(duck_dr)
+
+# dbGetQuery(conn = con, "SELECT current_setting('threads') AS threads")
+# dbGetQuery(conn = con, "SELECT current_setting('memory_limit') AS memlimit")
+
+# tbl_nm <- from_pkt
+pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+
+reloar_q <- "
+DROP TABLE IF EXISTS dta;
+CREATE TABLE dta AS SELECT * FROM read_parquet('{pqt_path}');
+ANALYZE dta;
+VACUUM;
+"
+
+from_file |>
+  purrr::walk(
+    ~ {
+      from_pkt <- .x
+      duck_dr <- duckdb(file.path("data-testing-duck", paste0(from_pkt, ".duckdb")))
+      con <- dbConnect(duck_dr)
+      tbl_nm <- from_pkt
+      pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+
+      dbExecute(con, statement = glue(reloar_q))
+      dbDisconnect(con, shutdown = TRUE)
+    }
+  )
+```

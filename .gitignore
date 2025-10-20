@@ -13,3 +13,6 @@ metastore_db/
 man/
 
 /.quarto/
+*.html
+*_files
+*.vdoc+

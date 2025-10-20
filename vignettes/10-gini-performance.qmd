@@ -1,12 +1,12 @@
 ---
 title: "Testing gini performance"
-format: html
 editor: source
 ---
 
 ```{r}
 pkgload::load_all()
 library(microbenchmark)
+library(here)
 library(bench)
 ```
 
@@ -64,8 +64,8 @@ DT_gini_coll_collapse3 <- \(x) {
     fsummarise(gini_base = gini_collapse(welfare, weight))
 }
 # DT_gini_coll_collapse3("data-testing/sample_0005m")
-
-list.dirs("data-testing", recursive = FALSE) |>
+here("data-testing") |> 
+  list.dirs(recursive = FALSE) |>
   purrr::walk(
     ~ {
       dta <- arrow::open_dataset(.x) |> collect() |> qDT()
