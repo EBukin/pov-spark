@@ -1,0 +1,190 @@
+---
+title: "Testing gini performance"
+format: html
+editor: source
+---
+
+```{r}
+pkgload::load_all()
+library(microbenchmark)
+library(bench)
+```
+
+
+## Grouped data GINI performance
+
+```{r}
+library(arrow)
+library(data.table)
+library(dplyr)
+library(collapse)
+setDTthreads(32)
+set_collapse(nthreads = 32)
+
+dta <- dta_test |> qDT()
+setkey(dta, country, year)
+setindex(dta, country, year, area, gender, age)
+
+DT_copy <- \(x) {
+  xx <- copy(x)
+  return(xx)
+}
+
+dta_collect <- \(x) {
+  arrow::open_dataset(x) |> collect()
+}
+
+DT_gini_base <- \(x) {
+  x[, .(gini_base = gini_base(welfare, weight)), keyby = .(country, year)]
+}
+DT_gini_base(dta)
+
+DT_gini_collapse <- \(x) {
+  x[, .(gini_base = gini_collapse(welfare, weight)), keyby = .(country, year)]
+}
+DT_gini_collapse(dta)
+
+DT_gini_coll_collapse <- \(x) {
+  x |>
+    fgroup_by(country, year) |>
+    fsummarise(gini_base = gini_collapse(welfare, weight))
+}
+DT_gini_coll_collapse(dta)
+
+DT_gini_coll_collapse2 <- \(x) {
+  x |>
+    fsummarise(gini_base = gini_collapse(welfare, weight))
+}
+gg <- dta |> fgroup_by(country, year)
+DT_gini_coll_collapse2(gg)
+
+DT_gini_coll_collapse3 <- \(x) {
+  dta_collect(x) |>
+    fgroup_by(country, year) |>
+    fsummarise(gini_base = gini_collapse(welfare, weight))
+}
+# DT_gini_coll_collapse3("data-testing/sample_0005m")
+
+list.dirs("data-testing", recursive = FALSE) |>
+  purrr::walk(
+    ~ {
+      dta <- arrow::open_dataset(.x) |> collect() |> qDT()
+      gg <- dta |> fgroup_by(country, year)
+      setkey(dta, country, year)
+      setindex(dta, country, year, area, gender, age)
+      md_out <-
+        bench::mark(
+          dta_collect(.x),
+          DT_copy(dta),
+          DT_gini_base(copy(dta)),
+          DT_gini_collapse(copy(dta)),
+          DT_gini_coll_collapse(dta),
+          DT_gini_coll_collapse2(gg),
+          DT_gini_coll_collapse3(.x),
+          iterations = 3,
+          check = FALSE
+        )
+      cat("\n\n\n")
+      cat(.x, "\n")
+      print(md_out |> select(expression,  min, median, mem_alloc))
+    }
+  )
+
+all.equal(
+  DT_gini_base(dta) |> as.matrix(),
+  DT_gini_collapse(dta) |> as.matrix()
+)
+
+all.equal(
+  DT_gini_base(dta)$gini_base,
+  DT_gini_coll_collapse2(gg)$gini_base
+)
+
+all.equal(
+  DT_gini_coll_collapse(dta)$gini_base,
+  DT_gini_coll_collapse2(gg)$gini_base
+)
+```
+
+
+
+### Benchmarking results (copy)
+
+
+```
+
+data-testing/sample_00001k 
+# A tibble: 7 × 4
+  expression                       min   median mem_alloc
+  <bch:expr>                  <bch:tm> <bch:tm> <bch:byt>
+1 dta_collect(.x)               6.76ms   7.18ms    12.4KB
+2 DT_copy(dta)                  37.7µs     46µs    91.5KB
+3 DT_gini_base(copy(dta))      554.6µs  763.2µs   154.5KB
+4 DT_gini_collapse(copy(dta))  559.4µs    674µs   145.3KB
+5 DT_gini_coll_collapse(dta)   208.5µs  285.8µs    63.7KB
+6 DT_gini_coll_collapse2(gg)   177.3µs  196.5µs      54KB
+7 DT_gini_coll_collapse3(.x)    6.91ms   7.29ms    72.6KB
+
+
+
+data-testing/sample_0001m 
+# A tibble: 7 × 4
+  expression                       min   median mem_alloc
+  <bch:expr>                  <bch:tm> <bch:tm> <bch:byt>
+1 dta_collect(.x)              77.24ms  79.47ms    11.1KB
+2 DT_copy(dta)                  8.91ms   9.06ms    38.2MB
+3 DT_gini_base(copy(dta))      63.91ms  73.16ms    76.9MB
+4 DT_gini_collapse(copy(dta))  49.56ms  64.38ms      69MB
+5 DT_gini_coll_collapse(dta)   32.15ms  32.17ms    57.4MB
+6 DT_gini_coll_collapse2(gg)   27.06ms  46.48ms    49.8MB
+7 DT_gini_coll_collapse3(.x)  135.21ms 142.65ms    80.3MB
+
+
+
+data-testing/sample_0005m 
+# A tibble: 7 × 4
+  expression                       min   median mem_alloc
+  <bch:expr>                  <bch:tm> <bch:tm> <bch:byt>
+1 dta_collect(.x)              105.1ms  114.4ms    11.1KB
+2 DT_copy(dta)                  43.1ms   44.3ms   190.8MB
+3 DT_gini_base(copy(dta))      224.3ms    271ms   382.6MB
+4 DT_gini_collapse(copy(dta))  212.1ms  222.2ms   344.2MB
+5 DT_gini_coll_collapse(dta)   156.9ms  161.2ms   286.3MB
+6 DT_gini_coll_collapse2(gg)   109.7ms  135.7ms   248.2MB
+7 DT_gini_coll_collapse3(.x)   307.8ms    366ms   400.8MB
+
+
+
+data-testing/sample_0050m 
+# A tibble: 7 × 4
+  expression                       min   median mem_alloc
+  <bch:expr>                  <bch:tm> <bch:tm> <bch:byt>
+1 dta_collect(.x)             375.03ms 447.34ms   11.09KB
+2 DT_copy(dta)                433.13ms 527.31ms    1.86GB
+3 DT_gini_base(copy(dta))        2.52s     2.6s    3.73GB
+4 DT_gini_collapse(copy(dta))    2.22s    2.29s    3.36GB
+5 DT_gini_coll_collapse(dta)     1.47s    1.51s    2.79GB
+6 DT_gini_coll_collapse2(gg)     1.08s    1.48s    2.42GB
+7 DT_gini_coll_collapse3(.x)      2.3s    2.71s    3.91GB
+
+data-testing/sample_0150m 
+# A tibble: 7 × 4
+  expression                       min   median mem_alloc
+  <bch:expr>                  <bch:tm> <bch:tm> <bch:byt>
+1 dta_collect(.x)                1.32s    1.42s   11.09KB
+2 DT_copy(dta)                   1.79s    2.09s    5.59GB
+3 DT_gini_base(copy(dta))        6.95s    9.41s    11.2GB
+4 DT_gini_collapse(copy(dta))    6.13s    6.61s   10.09GB
+5 DT_gini_coll_collapse(dta)     3.66s    3.82s    8.38GB
+6 DT_gini_coll_collapse2(gg)     2.87s    3.58s    7.26GB
+7 DT_gini_coll_collapse3(.x)     6.68s     7.2s   11.73GB
+
+```
+
+
+### Functions used for gini calculation
+
+```{r}
+gini_base
+gini_collapse
+```

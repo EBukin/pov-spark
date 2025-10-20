@@ -11,3 +11,5 @@ metastore_db/
 *.wal
 *.tmp/
 man/
+
+/.quarto/
