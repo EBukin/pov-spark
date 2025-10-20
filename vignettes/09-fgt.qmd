@@ -22,6 +22,7 @@ library(duckplyr)
 library(here)
 library(glue)
 
+source(here("R/fgt0.R"))
 
 pqt_fldr <- here("data-testing")
 # pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
@@ -29,47 +30,18 @@ duck_fldr <- here("data-testing-duck")
 
 from_files <- list.dirs(pqt_fldr, recursive = FALSE, full.names = F) |> sort()
 
-# Get a random sample of queries
-dta <- here(pqt_fldr, from_files[[1]]) |> arrow::open_dataset()
 
-# # Setting the random access options
-# set.seed(12345)
-# n <- 10
-# n_size <- 50
-# all_samples_files <-
-#   from_files |>
-#   map(
-#     ~ {
-#       all_options <- here(pqt_fldr, .x) |>
-#         arrow::open_dataset() |>
-#         distinct(country, year, area, gender, age) |>
-#         collect()
-#       1:n |> map(~ sample_n(all_options, n_size))
-#     }
-#   )
-
-# using built-in arrow functions -------------------------------------------
-get_pqt_data <- \(con_tbl, one_sample) {
-  con_tbl |>
-    semi_join(
-      one_sample,
-      by = c("country", "year", "area", "gender", "age"),
-      copy = TRUE
-    )
-}
-
+# Load data
 dta <-
   here("data-testing", from_files[[2]]) |>
   arrow::open_dataset() |>
   collect()
 
 
-dta$welfare |> fgt_collapse()
-dta$welfare |> fgt_base()
-
 library(data.table)
 library(collapse)
 
+# Collapse to get poverty measures
 get_fgt_collapse <- \(x) {
   x |>
     fgroup_by(country, year) |>
@@ -80,7 +52,7 @@ get_fgt_collapse <- \(x) {
     )
 }
 
-
+# Data table to get poverty measures
 get_fgt_DT <- \(x) {
   x[,
     .(
@@ -92,32 +64,54 @@ get_fgt_DT <- \(x) {
   ]
 }
 
-
 get_fgt_DT(copy(qDT(dta)))
 get_fgt_DT(copy(qDT(dta)))
 
 
-here("data-testing") |> 
-  list.dirs(recursive = FALSE) |>
-  purrr::walk(
-    ~ {
-      dta <- arrow::open_dataset(.x) |> collect() |> qDT()
-      # gg <- dta |> fgroup_by(country, year)
-      setkey(dta, country, year)
-      setindex(dta, country, year, area, gender, age)
+# Dplyr
+get_fgt_dplyr <- function(dta, povline = 0.1) {
+  dta  |>
+  mutate(
+    poor = as.integer(welfare <= povline),
+    hc = poor * weight
+  ) |> 
+  summarise(
+    hc0 = sum(hc),
+    ftg0 = sum(hc) / sum(weight),
+    ftg1 = sum(poor * (povline - welfare) * weight) / sum(weight) / povline,
+    .groups = "drop"
+  ) |> 
+  mutate(ftg2 = ftg1 ^ 2) |> 
+  select(country, year, hc = hc0, ftg0, ftg1, ftg2)
+}
 
-      md_out <-
-        bench::mark(
-          get_fgt_collapse(dta),
-          get_fgt_DT(copy(dta)),
-          iterations = 3,
-          check = FALSE
-        )
-      cat("\n\n\n")
-      cat(.x, "\n")
-      print(md_out |> select(expression,  min, median, mem_alloc))
-    }
-  )
+
+pl <-  collapse::fmedian(dta$welfare, w = dta$weight)/2
+
+dta |> group_by(country, year) |> get_fgt_dplyr(pl)
+
+
+# here("data-testing") |> 
+#   list.dirs(recursive = FALSE) |>
+#   purrr::walk(
+#     ~ {
+#       dta <- arrow::open_dataset(.x) |> collect() |> qDT()
+#       # gg <- dta |> fgroup_by(country, year)
+#       setkey(dta, country, year)
+#       setindex(dta, country, year, area, gender, age)
+
+#       md_out <-
+#         bench::mark(
+#           get_fgt_collapse(dta),
+#           get_fgt_DT(copy(dta)),
+#           iterations = 3,
+#           check = FALSE
+#         )
+#       cat("\n\n\n")
+#       cat(.x, "\n")
+#       print(md_out |> select(expression,  min, median, mem_alloc))
+#     }
+#   )
 
 ```
 
