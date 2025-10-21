@@ -15,4 +15,4 @@ man/
 /.quarto/
 *.html
 *_files
-*.vdoc+
+.vdoc*.r

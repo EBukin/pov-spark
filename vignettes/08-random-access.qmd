@@ -125,10 +125,12 @@ all_samples_files |>
 
       con_dt <- read_dt(con_tbl_pqt)
 
+      n <- nrow(con_dt)
+
       md_out <-
         bench::mark(
           walk(req_list, ~ get_pqt_data(con_tbl_pqt, .x) |> collect()),
-          # walk(req_list, ~ get_duck_data(con_tbl_duckdb, .x) |> collect()),
+          if (n < 5e6+10) walk(req_list, ~ get_duck_data(con_tbl_duckdb, .x) |> collect()),
           read_dt(con_tbl_pqt),
           copy(con_dt),
           walk(req_list, ~ get_dt_data(copy(con_dt), .x)),
