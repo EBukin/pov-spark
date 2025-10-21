@@ -2220,204 +2220,387 @@ vertical-align: -.125em;
 <section id="read-random-countriesyearsareasgendersages-from-the-data" class="level2" data-number="1">
 <h2 data-number="1" class="anchored" data-anchor-id="read-random-countriesyearsareasgendersages-from-the-data"><span class="header-section-number">1</span> Read random countries/years/areas/genders/ages from the data</h2>
 <div class="cell">
-<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(purrr)</span>
-<span id="cb7-2"><a href="#cb7-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(arrow)</span>
-<span id="cb7-3"><a href="#cb7-3" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr, <span class="at">warn.conflicts =</span> <span class="cn">FALSE</span>)</span>
-<span id="cb7-4"><a href="#cb7-4" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(DBI)</span>
-<span id="cb7-5"><a href="#cb7-5" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(duckdb)</span>
-<span id="cb7-6"><a href="#cb7-6" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbplyr)</span>
-<span id="cb7-7"><a href="#cb7-7" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(duckplyr)</span>
-<span id="cb7-8"><a href="#cb7-8" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(here)</span>
-<span id="cb7-9"><a href="#cb7-9" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(glue)</span>
-<span id="cb7-10"><a href="#cb7-10" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-11"><a href="#cb7-11" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-12"><a href="#cb7-12" aria-hidden="true" tabindex="-1"></a>pqt_fldr <span class="ot">&lt;-</span> <span class="fu">here</span>(<span class="st">&quot;data-testing&quot;</span>)</span>
-<span id="cb7-13"><a href="#cb7-13" aria-hidden="true" tabindex="-1"></a><span class="co"># pqt_path &lt;- file.path(pkt_fldr, from_pkt, &quot;**/*.parquet&quot;)</span></span>
-<span id="cb7-14"><a href="#cb7-14" aria-hidden="true" tabindex="-1"></a>duck_fldr <span class="ot">&lt;-</span> <span class="fu">here</span>(<span class="st">&quot;data-testing-duck&quot;</span>)</span>
-<span id="cb7-15"><a href="#cb7-15" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-16"><a href="#cb7-16" aria-hidden="true" tabindex="-1"></a>from_files <span class="ot">&lt;-</span> <span class="fu">list.dirs</span>(pqt_fldr, <span class="at">recursive =</span> <span class="cn">FALSE</span>, <span class="at">full.names =</span> F) <span class="sc">|&gt;</span> <span class="fu">sort</span>()</span>
-<span id="cb7-17"><a href="#cb7-17" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-18"><a href="#cb7-18" aria-hidden="true" tabindex="-1"></a><span class="co"># Get a random sample of queries</span></span>
-<span id="cb7-19"><a href="#cb7-19" aria-hidden="true" tabindex="-1"></a>dta <span class="ot">&lt;-</span> <span class="fu">here</span>(pqt_fldr, from_files[[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> arrow<span class="sc">::</span><span class="fu">open_dataset</span>()</span>
-<span id="cb7-20"><a href="#cb7-20" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-21"><a href="#cb7-21" aria-hidden="true" tabindex="-1"></a><span class="co"># Setting the random access options</span></span>
-<span id="cb7-22"><a href="#cb7-22" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">12345</span>)</span>
-<span id="cb7-23"><a href="#cb7-23" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">10</span></span>
-<span id="cb7-24"><a href="#cb7-24" aria-hidden="true" tabindex="-1"></a>n_size <span class="ot">&lt;-</span> <span class="dv">50</span></span>
-<span id="cb7-25"><a href="#cb7-25" aria-hidden="true" tabindex="-1"></a>all_samples_files <span class="ot">&lt;-</span></span>
-<span id="cb7-26"><a href="#cb7-26" aria-hidden="true" tabindex="-1"></a>  from_files <span class="sc">|&gt;</span></span>
-<span id="cb7-27"><a href="#cb7-27" aria-hidden="true" tabindex="-1"></a>  <span class="fu">map</span>(</span>
-<span id="cb7-28"><a href="#cb7-28" aria-hidden="true" tabindex="-1"></a>    <span class="sc">~</span> {</span>
-<span id="cb7-29"><a href="#cb7-29" aria-hidden="true" tabindex="-1"></a>      all_options <span class="ot">&lt;-</span> <span class="fu">here</span>(pqt_fldr, .x) <span class="sc">|&gt;</span></span>
-<span id="cb7-30"><a href="#cb7-30" aria-hidden="true" tabindex="-1"></a>        arrow<span class="sc">::</span><span class="fu">open_dataset</span>() <span class="sc">|&gt;</span></span>
-<span id="cb7-31"><a href="#cb7-31" aria-hidden="true" tabindex="-1"></a>        <span class="fu">distinct</span>(country, year, area, gender, age) <span class="sc">|&gt;</span></span>
-<span id="cb7-32"><a href="#cb7-32" aria-hidden="true" tabindex="-1"></a>        <span class="fu">collect</span>()</span>
-<span id="cb7-33"><a href="#cb7-33" aria-hidden="true" tabindex="-1"></a>      <span class="dv">1</span><span class="sc">:</span>n <span class="sc">|&gt;</span> <span class="fu">map</span>(<span class="sc">~</span> <span class="fu">sample_n</span>(all_options, n_size))</span>
-<span id="cb7-34"><a href="#cb7-34" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb7-35"><a href="#cb7-35" aria-hidden="true" tabindex="-1"></a>  )</span>
-<span id="cb7-36"><a href="#cb7-36" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-37"><a href="#cb7-37" aria-hidden="true" tabindex="-1"></a><span class="co"># using built-in arrow functions -------------------------------------------</span></span>
-<span id="cb7-38"><a href="#cb7-38" aria-hidden="true" tabindex="-1"></a>get_pqt_data <span class="ot">&lt;-</span> \(con_tbl, one_sample) {</span>
-<span id="cb7-39"><a href="#cb7-39" aria-hidden="true" tabindex="-1"></a>  con_tbl <span class="sc">|&gt;</span></span>
-<span id="cb7-40"><a href="#cb7-40" aria-hidden="true" tabindex="-1"></a>    <span class="fu">semi_join</span>(</span>
-<span id="cb7-41"><a href="#cb7-41" aria-hidden="true" tabindex="-1"></a>      one_sample,</span>
-<span id="cb7-42"><a href="#cb7-42" aria-hidden="true" tabindex="-1"></a>      <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;country&quot;</span>, <span class="st">&quot;year&quot;</span>, <span class="st">&quot;area&quot;</span>, <span class="st">&quot;gender&quot;</span>, <span class="st">&quot;age&quot;</span>),</span>
-<span id="cb7-43"><a href="#cb7-43" aria-hidden="true" tabindex="-1"></a>      <span class="at">copy =</span> <span class="cn">TRUE</span></span>
-<span id="cb7-44"><a href="#cb7-44" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb7-45"><a href="#cb7-45" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb7-46"><a href="#cb7-46" aria-hidden="true" tabindex="-1"></a><span class="fu">here</span>(<span class="st">&quot;data-testing&quot;</span>, from_files[[<span class="dv">3</span>]]) <span class="sc">|&gt;</span></span>
-<span id="cb7-47"><a href="#cb7-47" aria-hidden="true" tabindex="-1"></a>  arrow<span class="sc">::</span><span class="fu">open_dataset</span>() <span class="sc">|&gt;</span></span>
-<span id="cb7-48"><a href="#cb7-48" aria-hidden="true" tabindex="-1"></a>  <span class="fu">get_pqt_data</span>(<span class="at">one_sample =</span> all_samples_files[[<span class="dv">3</span>]][[<span class="dv">1</span>]]) <span class="sc">|&gt;</span></span>
-<span id="cb7-49"><a href="#cb7-49" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect</span>()</span>
-<span id="cb7-50"><a href="#cb7-50" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-51"><a href="#cb7-51" aria-hidden="true" tabindex="-1"></a><span class="co"># using duckdb -----------------------------------------</span></span>
-<span id="cb7-52"><a href="#cb7-52" aria-hidden="true" tabindex="-1"></a>get_duck_data <span class="ot">&lt;-</span> \(con, one_sample) {</span>
-<span id="cb7-53"><a href="#cb7-53" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tbl</span>(con, <span class="st">&quot;dta&quot;</span>) <span class="sc">|&gt;</span> <span class="fu">get_pqt_data</span>(one_sample)</span>
-<span id="cb7-54"><a href="#cb7-54" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb7-55"><a href="#cb7-55" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-56"><a href="#cb7-56" aria-hidden="true" tabindex="-1"></a>duck_con <span class="ot">&lt;-</span> <span class="fu">duckdb</span>(<span class="fu">file.path</span>(duck_fldr, <span class="fu">paste0</span>(from_files[[<span class="dv">1</span>]], <span class="st">&quot;.duckdb&quot;</span>))) <span class="sc">|&gt;</span></span>
-<span id="cb7-57"><a href="#cb7-57" aria-hidden="true" tabindex="-1"></a>  <span class="fu">dbConnect</span>()</span>
-<span id="cb7-58"><a href="#cb7-58" aria-hidden="true" tabindex="-1"></a><span class="fu">get_duck_data</span>(duck_con, all_samples_files[[<span class="dv">1</span>]][[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> <span class="fu">show_query</span>()</span>
-<span id="cb7-59"><a href="#cb7-59" aria-hidden="true" tabindex="-1"></a><span class="fu">get_duck_data</span>(duck_con, all_samples_files[[<span class="dv">1</span>]][[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> <span class="fu">collect</span>()</span>
-<span id="cb7-60"><a href="#cb7-60" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-61"><a href="#cb7-61" aria-hidden="true" tabindex="-1"></a><span class="co"># # using indexed data.table -----------------------------------------</span></span>
-<span id="cb7-62"><a href="#cb7-62" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(data.table)</span>
-<span id="cb7-63"><a href="#cb7-63" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(collapse)</span>
-<span id="cb7-64"><a href="#cb7-64" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-65"><a href="#cb7-65" aria-hidden="true" tabindex="-1"></a>read_dt <span class="ot">&lt;-</span> \(con) {</span>
-<span id="cb7-66"><a href="#cb7-66" aria-hidden="true" tabindex="-1"></a>  dta <span class="ot">&lt;-</span> con <span class="sc">|&gt;</span> <span class="fu">collect</span>() <span class="sc">|&gt;</span> <span class="fu">qDT</span>()</span>
-<span id="cb7-67"><a href="#cb7-67" aria-hidden="true" tabindex="-1"></a>  <span class="fu">setkey</span>(dta, country, year)</span>
-<span id="cb7-68"><a href="#cb7-68" aria-hidden="true" tabindex="-1"></a>  <span class="fu">setindex</span>(dta, country, year, area, gender, age)</span>
-<span id="cb7-69"><a href="#cb7-69" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(dta)</span>
-<span id="cb7-70"><a href="#cb7-70" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb7-71"><a href="#cb7-71" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-72"><a href="#cb7-72" aria-hidden="true" tabindex="-1"></a>get_dt_data <span class="ot">&lt;-</span> \(dt_con, one_sample) {</span>
-<span id="cb7-73"><a href="#cb7-73" aria-hidden="true" tabindex="-1"></a>  one_sample <span class="ot">&lt;-</span> <span class="fu">copy</span>(one_sample) <span class="sc">|&gt;</span> <span class="fu">qDT</span>()</span>
-<span id="cb7-74"><a href="#cb7-74" aria-hidden="true" tabindex="-1"></a>  <span class="fu">setkey</span>(one_sample, country, year, area, gender, age)</span>
-<span id="cb7-75"><a href="#cb7-75" aria-hidden="true" tabindex="-1"></a>  dt_con[one_sample, on <span class="ot">=</span> .(country, year, area, gender, age), nomatch <span class="ot">=</span> <span class="dv">0</span>]</span>
-<span id="cb7-76"><a href="#cb7-76" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb7-77"><a href="#cb7-77" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-78"><a href="#cb7-78" aria-hidden="true" tabindex="-1"></a>from_dt <span class="ot">&lt;-</span> <span class="fu">here</span>(pqt_fldr, from_files[[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> arrow<span class="sc">::</span><span class="fu">open_dataset</span>() <span class="sc">|&gt;</span> <span class="fu">read_dt</span>()</span>
-<span id="cb7-79"><a href="#cb7-79" aria-hidden="true" tabindex="-1"></a><span class="fu">get_dt_data</span>(<span class="fu">copy</span>(from_dt), all_samples_files[[<span class="dv">1</span>]][[<span class="dv">2</span>]])</span>
-<span id="cb7-80"><a href="#cb7-80" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-81"><a href="#cb7-81" aria-hidden="true" tabindex="-1"></a><span class="co"># # using collapse -----------------------------------------</span></span>
-<span id="cb7-82"><a href="#cb7-82" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-83"><a href="#cb7-83" aria-hidden="true" tabindex="-1"></a>get_collaps_data <span class="ot">&lt;-</span> \(dt_con, one_sample) {</span>
-<span id="cb7-84"><a href="#cb7-84" aria-hidden="true" tabindex="-1"></a>  dt_con <span class="sc">|&gt;</span></span>
-<span id="cb7-85"><a href="#cb7-85" aria-hidden="true" tabindex="-1"></a>    collapse<span class="sc">::</span><span class="fu">join</span>(</span>
-<span id="cb7-86"><a href="#cb7-86" aria-hidden="true" tabindex="-1"></a>      one_sample,</span>
-<span id="cb7-87"><a href="#cb7-87" aria-hidden="true" tabindex="-1"></a>      <span class="at">on =</span> <span class="fu">c</span>(<span class="st">&quot;country&quot;</span>, <span class="st">&quot;year&quot;</span>, <span class="st">&quot;area&quot;</span>, <span class="st">&quot;gender&quot;</span>, <span class="st">&quot;age&quot;</span>),</span>
-<span id="cb7-88"><a href="#cb7-88" aria-hidden="true" tabindex="-1"></a>      <span class="at">how =</span> <span class="st">&quot;semi&quot;</span>,</span>
-<span id="cb7-89"><a href="#cb7-89" aria-hidden="true" tabindex="-1"></a>      <span class="at">verbose =</span> <span class="cn">FALSE</span>,</span>
-<span id="cb7-90"><a href="#cb7-90" aria-hidden="true" tabindex="-1"></a>      <span class="at">sort =</span> <span class="cn">FALSE</span></span>
-<span id="cb7-91"><a href="#cb7-91" aria-hidden="true" tabindex="-1"></a>    )</span>
-<span id="cb7-92"><a href="#cb7-92" aria-hidden="true" tabindex="-1"></a>}</span>
-<span id="cb7-93"><a href="#cb7-93" aria-hidden="true" tabindex="-1"></a><span class="fu">get_collaps_data</span>(<span class="fu">copy</span>(from_dt), all_samples_files[[<span class="dv">1</span>]][[<span class="dv">2</span>]])</span>
-<span id="cb7-94"><a href="#cb7-94" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-95"><a href="#cb7-95" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-96"><a href="#cb7-96" aria-hidden="true" tabindex="-1"></a><span class="co"># Benchmarking</span></span>
-<span id="cb7-97"><a href="#cb7-97" aria-hidden="true" tabindex="-1"></a>all_samples_files <span class="sc">|&gt;</span></span>
-<span id="cb7-98"><a href="#cb7-98" aria-hidden="true" tabindex="-1"></a>  purrr<span class="sc">::</span><span class="fu">walk2</span>(</span>
-<span id="cb7-99"><a href="#cb7-99" aria-hidden="true" tabindex="-1"></a>    from_files,</span>
-<span id="cb7-100"><a href="#cb7-100" aria-hidden="true" tabindex="-1"></a>    <span class="sc">~</span> {</span>
-<span id="cb7-101"><a href="#cb7-101" aria-hidden="true" tabindex="-1"></a>      con_nm <span class="ot">&lt;-</span> .y</span>
-<span id="cb7-102"><a href="#cb7-102" aria-hidden="true" tabindex="-1"></a>      req_list <span class="ot">&lt;-</span> .x</span>
-<span id="cb7-103"><a href="#cb7-103" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-104"><a href="#cb7-104" aria-hidden="true" tabindex="-1"></a>      con_tbl_pqt <span class="ot">&lt;-</span></span>
-<span id="cb7-105"><a href="#cb7-105" aria-hidden="true" tabindex="-1"></a>        <span class="fu">here</span>(<span class="st">&quot;data-testing&quot;</span>, con_nm) <span class="sc">|&gt;</span></span>
-<span id="cb7-106"><a href="#cb7-106" aria-hidden="true" tabindex="-1"></a>        arrow<span class="sc">::</span><span class="fu">open_dataset</span>()</span>
-<span id="cb7-107"><a href="#cb7-107" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-108"><a href="#cb7-108" aria-hidden="true" tabindex="-1"></a>      con_tbl_duckdb <span class="ot">&lt;-</span> <span class="fu">file.path</span>(duck_fldr, <span class="fu">paste0</span>(con_nm, <span class="st">&quot;.duckdb&quot;</span>)) <span class="sc">|&gt;</span></span>
-<span id="cb7-109"><a href="#cb7-109" aria-hidden="true" tabindex="-1"></a>        <span class="fu">duckdb</span>() <span class="sc">|&gt;</span></span>
-<span id="cb7-110"><a href="#cb7-110" aria-hidden="true" tabindex="-1"></a>        <span class="fu">dbConnect</span>()</span>
-<span id="cb7-111"><a href="#cb7-111" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-112"><a href="#cb7-112" aria-hidden="true" tabindex="-1"></a>      con_dt <span class="ot">&lt;-</span> <span class="fu">read_dt</span>(con_tbl_pqt)</span>
-<span id="cb7-113"><a href="#cb7-113" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-114"><a href="#cb7-114" aria-hidden="true" tabindex="-1"></a>      n <span class="ot">&lt;-</span> <span class="fu">nrow</span>(con_dt)</span>
-<span id="cb7-115"><a href="#cb7-115" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-116"><a href="#cb7-116" aria-hidden="true" tabindex="-1"></a>      md_out <span class="ot">&lt;-</span></span>
-<span id="cb7-117"><a href="#cb7-117" aria-hidden="true" tabindex="-1"></a>        bench<span class="sc">::</span><span class="fu">mark</span>(</span>
-<span id="cb7-118"><a href="#cb7-118" aria-hidden="true" tabindex="-1"></a>          <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_pqt_data</span>(con_tbl_pqt, .x) <span class="sc">|&gt;</span> <span class="fu">collect</span>()),</span>
-<span id="cb7-119"><a href="#cb7-119" aria-hidden="true" tabindex="-1"></a>          <span class="cf">if</span> (n <span class="sc">&lt;</span> <span class="fl">5e6</span><span class="sc">+</span><span class="dv">10</span>) <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_duck_data</span>(con_tbl_duckdb, .x) <span class="sc">|&gt;</span> <span class="fu">collect</span>()),</span>
-<span id="cb7-120"><a href="#cb7-120" aria-hidden="true" tabindex="-1"></a>          <span class="fu">read_dt</span>(con_tbl_pqt),</span>
-<span id="cb7-121"><a href="#cb7-121" aria-hidden="true" tabindex="-1"></a>          <span class="fu">copy</span>(con_dt),</span>
-<span id="cb7-122"><a href="#cb7-122" aria-hidden="true" tabindex="-1"></a>          <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_dt_data</span>(<span class="fu">copy</span>(con_dt), .x)),</span>
-<span id="cb7-123"><a href="#cb7-123" aria-hidden="true" tabindex="-1"></a>          <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_collaps_data</span>(con_dt, .x)),</span>
-<span id="cb7-124"><a href="#cb7-124" aria-hidden="true" tabindex="-1"></a>          <span class="at">iterations =</span> <span class="dv">3</span>,</span>
-<span id="cb7-125"><a href="#cb7-125" aria-hidden="true" tabindex="-1"></a>          <span class="at">check =</span> <span class="cn">FALSE</span></span>
-<span id="cb7-126"><a href="#cb7-126" aria-hidden="true" tabindex="-1"></a>        )</span>
-<span id="cb7-127"><a href="#cb7-127" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-128"><a href="#cb7-128" aria-hidden="true" tabindex="-1"></a>      <span class="fu">dbDisconnect</span>(con_tbl_duckdb, <span class="at">shutdown =</span> <span class="cn">TRUE</span>)</span>
-<span id="cb7-129"><a href="#cb7-129" aria-hidden="true" tabindex="-1"></a></span>
-<span id="cb7-130"><a href="#cb7-130" aria-hidden="true" tabindex="-1"></a>      <span class="fu">cat</span>(<span class="st">&quot;</span><span class="sc">\n\n\n</span><span class="st">&quot;</span>)</span>
-<span id="cb7-131"><a href="#cb7-131" aria-hidden="true" tabindex="-1"></a>      <span class="fu">cat</span>(con_nm, <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
-<span id="cb7-132"><a href="#cb7-132" aria-hidden="true" tabindex="-1"></a>      md_out <span class="sc">|&gt;</span></span>
-<span id="cb7-133"><a href="#cb7-133" aria-hidden="true" tabindex="-1"></a>        <span class="fu">select</span>(expression, min, median, mem_alloc) <span class="sc">|&gt;</span></span>
-<span id="cb7-134"><a href="#cb7-134" aria-hidden="true" tabindex="-1"></a>        <span class="fu">print</span>()</span>
-<span id="cb7-135"><a href="#cb7-135" aria-hidden="true" tabindex="-1"></a>    }</span>
-<span id="cb7-136"><a href="#cb7-136" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="sourceCode cell-code" id="cb7"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(purrr)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;purrr&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb9"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(arrow)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;arrow&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: &#39;arrow&#39;</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following object is masked from &#39;package:utils&#39;:
+
+    timestamp</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb13"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dplyr, <span class="at">warn.conflicts =</span> <span class="cn">FALSE</span>)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;dplyr&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb15"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb15-1"><a href="#cb15-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(DBI)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;DBI&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb17"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb17-1"><a href="#cb17-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(duckdb)</span>
+<span id="cb17-2"><a href="#cb17-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(dbplyr)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;dbplyr&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: &#39;dbplyr&#39;</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from &#39;package:dplyr&#39;:
+
+    ident, sql</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb21"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb21-1"><a href="#cb21-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(duckplyr)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;duckplyr&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The duckplyr package is configured to fall back to dplyr when it encounters an
+incompatibility. Fallback events can be collected and uploaded for analysis to
+guide future development. By default, data will be collected but no data will
+be uploaded.
+ℹ Automatic fallback uploading is not controlled and therefore disabled, see
+  `?duckplyr::fallback()`.
+✔ Number of reports ready for upload: 35.
+→ Review with `duckplyr::fallback_review()`, upload with
+  `duckplyr::fallback_upload()`.
+ℹ Configure automatic uploading with `duckplyr::fallback_config()`.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>✔ Overwriting dplyr methods with duckplyr methods.
+ℹ Turn off with `duckplyr::methods_restore()`.</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: &#39;duckplyr&#39;</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following object is masked from &#39;package:duckdb&#39;:
+
+    read_csv_duckdb</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb27"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb27-1"><a href="#cb27-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(here)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;here&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>here() starts at C:/Users/wb532966/eb-local/povspark</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb30"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb30-1"><a href="#cb30-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(glue)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;glue&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb32"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb32-1"><a href="#cb32-1" aria-hidden="true" tabindex="-1"></a>pqt_fldr <span class="ot">&lt;-</span> <span class="fu">here</span>(<span class="st">&quot;data-testing&quot;</span>)</span>
+<span id="cb32-2"><a href="#cb32-2" aria-hidden="true" tabindex="-1"></a><span class="co"># pqt_path &lt;- file.path(pkt_fldr, from_pkt, &quot;**/*.parquet&quot;)</span></span>
+<span id="cb32-3"><a href="#cb32-3" aria-hidden="true" tabindex="-1"></a>duck_fldr <span class="ot">&lt;-</span> <span class="fu">here</span>(<span class="st">&quot;data-testing-duck&quot;</span>)</span>
+<span id="cb32-4"><a href="#cb32-4" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-5"><a href="#cb32-5" aria-hidden="true" tabindex="-1"></a>from_files <span class="ot">&lt;-</span> <span class="fu">list.dirs</span>(pqt_fldr, <span class="at">recursive =</span> <span class="cn">FALSE</span>, <span class="at">full.names =</span> F) <span class="sc">|&gt;</span> <span class="fu">sort</span>()</span>
+<span id="cb32-6"><a href="#cb32-6" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-7"><a href="#cb32-7" aria-hidden="true" tabindex="-1"></a><span class="co"># Get a random sample of queries</span></span>
+<span id="cb32-8"><a href="#cb32-8" aria-hidden="true" tabindex="-1"></a>dta <span class="ot">&lt;-</span> <span class="fu">here</span>(pqt_fldr, from_files[[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> arrow<span class="sc">::</span><span class="fu">open_dataset</span>()</span>
+<span id="cb32-9"><a href="#cb32-9" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-10"><a href="#cb32-10" aria-hidden="true" tabindex="-1"></a><span class="co"># Setting the random access options</span></span>
+<span id="cb32-11"><a href="#cb32-11" aria-hidden="true" tabindex="-1"></a><span class="fu">set.seed</span>(<span class="dv">12345</span>)</span>
+<span id="cb32-12"><a href="#cb32-12" aria-hidden="true" tabindex="-1"></a>n <span class="ot">&lt;-</span> <span class="dv">10</span></span>
+<span id="cb32-13"><a href="#cb32-13" aria-hidden="true" tabindex="-1"></a>n_size <span class="ot">&lt;-</span> <span class="dv">50</span></span>
+<span id="cb32-14"><a href="#cb32-14" aria-hidden="true" tabindex="-1"></a>all_samples_files <span class="ot">&lt;-</span></span>
+<span id="cb32-15"><a href="#cb32-15" aria-hidden="true" tabindex="-1"></a>  from_files <span class="sc">|&gt;</span></span>
+<span id="cb32-16"><a href="#cb32-16" aria-hidden="true" tabindex="-1"></a>  <span class="fu">map</span>(</span>
+<span id="cb32-17"><a href="#cb32-17" aria-hidden="true" tabindex="-1"></a>    <span class="sc">~</span> {</span>
+<span id="cb32-18"><a href="#cb32-18" aria-hidden="true" tabindex="-1"></a>      all_options <span class="ot">&lt;-</span> <span class="fu">here</span>(pqt_fldr, .x) <span class="sc">|&gt;</span></span>
+<span id="cb32-19"><a href="#cb32-19" aria-hidden="true" tabindex="-1"></a>        arrow<span class="sc">::</span><span class="fu">open_dataset</span>() <span class="sc">|&gt;</span></span>
+<span id="cb32-20"><a href="#cb32-20" aria-hidden="true" tabindex="-1"></a>        <span class="fu">distinct</span>(country, year, area, gender, age) <span class="sc">|&gt;</span></span>
+<span id="cb32-21"><a href="#cb32-21" aria-hidden="true" tabindex="-1"></a>        <span class="fu">collect</span>()</span>
+<span id="cb32-22"><a href="#cb32-22" aria-hidden="true" tabindex="-1"></a>      <span class="dv">1</span><span class="sc">:</span>n <span class="sc">|&gt;</span> <span class="fu">map</span>(<span class="sc">~</span> <span class="fu">sample_n</span>(all_options, n_size))</span>
+<span id="cb32-23"><a href="#cb32-23" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb32-24"><a href="#cb32-24" aria-hidden="true" tabindex="-1"></a>  )</span>
+<span id="cb32-25"><a href="#cb32-25" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb32-26"><a href="#cb32-26" aria-hidden="true" tabindex="-1"></a><span class="co"># using built-in arrow functions -------------------------------------------</span></span>
+<span id="cb32-27"><a href="#cb32-27" aria-hidden="true" tabindex="-1"></a>get_pqt_data <span class="ot">&lt;-</span> \(con_tbl, one_sample) {</span>
+<span id="cb32-28"><a href="#cb32-28" aria-hidden="true" tabindex="-1"></a>  con_tbl <span class="sc">|&gt;</span></span>
+<span id="cb32-29"><a href="#cb32-29" aria-hidden="true" tabindex="-1"></a>    <span class="fu">semi_join</span>(</span>
+<span id="cb32-30"><a href="#cb32-30" aria-hidden="true" tabindex="-1"></a>      one_sample,</span>
+<span id="cb32-31"><a href="#cb32-31" aria-hidden="true" tabindex="-1"></a>      <span class="at">by =</span> <span class="fu">c</span>(<span class="st">&quot;country&quot;</span>, <span class="st">&quot;year&quot;</span>, <span class="st">&quot;area&quot;</span>, <span class="st">&quot;gender&quot;</span>, <span class="st">&quot;age&quot;</span>),</span>
+<span id="cb32-32"><a href="#cb32-32" aria-hidden="true" tabindex="-1"></a>      <span class="at">copy =</span> <span class="cn">TRUE</span></span>
+<span id="cb32-33"><a href="#cb32-33" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb32-34"><a href="#cb32-34" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb32-35"><a href="#cb32-35" aria-hidden="true" tabindex="-1"></a><span class="fu">here</span>(<span class="st">&quot;data-testing&quot;</span>, from_files[[<span class="dv">3</span>]]) <span class="sc">|&gt;</span></span>
+<span id="cb32-36"><a href="#cb32-36" aria-hidden="true" tabindex="-1"></a>  arrow<span class="sc">::</span><span class="fu">open_dataset</span>() <span class="sc">|&gt;</span></span>
+<span id="cb32-37"><a href="#cb32-37" aria-hidden="true" tabindex="-1"></a>  <span class="fu">get_pqt_data</span>(<span class="at">one_sample =</span> all_samples_files[[<span class="dv">3</span>]][[<span class="dv">1</span>]]) <span class="sc">|&gt;</span></span>
+<span id="cb32-38"><a href="#cb32-38" aria-hidden="true" tabindex="-1"></a>  <span class="fu">collect</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 23,430 × 7
+    year welfare weight  area gender   age country
+   &lt;int&gt;   &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;  &lt;int&gt; &lt;int&gt;   &lt;int&gt;
+ 1  2012   0.961  3616.     1      2     3       1
+ 2  2012   1.49   4653.     1      2     3       1
+ 3  2012   2.39   2217.     1      2     3       1
+ 4  2012   4.21   5726.     1      2     3       1
+ 5  2012   4.38   2106.     1      2     3       1
+ 6  2012   6.07   5270.     1      2     3       1
+ 7  2012   7.65   7715.     1      2     3       1
+ 8  2012   9.22   5429.     1      2     3       1
+ 9  2012   9.52  10612.     1      2     3       1
+10  2012  10.1    2548.     1      2     3       1
+# ℹ 23,420 more rows</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb34"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb34-1"><a href="#cb34-1" aria-hidden="true" tabindex="-1"></a><span class="co"># using duckdb -----------------------------------------</span></span>
+<span id="cb34-2"><a href="#cb34-2" aria-hidden="true" tabindex="-1"></a>get_duck_data <span class="ot">&lt;-</span> \(con, one_sample) {</span>
+<span id="cb34-3"><a href="#cb34-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">tbl</span>(con, <span class="st">&quot;dta&quot;</span>) <span class="sc">|&gt;</span> <span class="fu">get_pqt_data</span>(one_sample)</span>
+<span id="cb34-4"><a href="#cb34-4" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb34-5"><a href="#cb34-5" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb34-6"><a href="#cb34-6" aria-hidden="true" tabindex="-1"></a>duck_con <span class="ot">&lt;-</span> <span class="fu">duckdb</span>(<span class="fu">file.path</span>(duck_fldr, <span class="fu">paste0</span>(from_files[[<span class="dv">1</span>]], <span class="st">&quot;.duckdb&quot;</span>))) <span class="sc">|&gt;</span></span>
+<span id="cb34-7"><a href="#cb34-7" aria-hidden="true" tabindex="-1"></a>  <span class="fu">dbConnect</span>()</span>
+<span id="cb34-8"><a href="#cb34-8" aria-hidden="true" tabindex="-1"></a><span class="fu">get_duck_data</span>(duck_con, all_samples_files[[<span class="dv">1</span>]][[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> <span class="fu">show_query</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>&lt;SQL&gt;
+SELECT dta.*
+FROM dta
+WHERE EXISTS (
+  SELECT 1 FROM dbplyr_6CEKFLnyB0
+  WHERE
+    (dta.country = dbplyr_6CEKFLnyB0.country) AND
+    (dta.&quot;year&quot; = dbplyr_6CEKFLnyB0.&quot;year&quot;) AND
+    (dta.area = dbplyr_6CEKFLnyB0.area) AND
+    (dta.gender = dbplyr_6CEKFLnyB0.gender) AND
+    (dta.age = dbplyr_6CEKFLnyB0.age)
+)</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb36"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb36-1"><a href="#cb36-1" aria-hidden="true" tabindex="-1"></a><span class="fu">get_duck_data</span>(duck_con, all_samples_files[[<span class="dv">1</span>]][[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> <span class="fu">collect</span>()</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code># A tibble: 576 × 7
+   country  year welfare weight  area gender   age
+     &lt;int&gt; &lt;int&gt;   &lt;dbl&gt;  &lt;dbl&gt; &lt;int&gt;  &lt;int&gt; &lt;int&gt;
+ 1       1  1999    1.83  5867.     1      1     2
+ 2       1  1999    5.87  1728.     1      1     1
+ 3       1  1999   12.9    934.     2      1     1
+ 4       1  1999   33.7   5187.     1      1     1
+ 5       1  1999   50.6   1662.     1      2     4
+ 6       1  1999   60.3   1389.     1      1     2
+ 7       1  1999   96.3   6941.     1      1     2
+ 8       1  1999  102.    8031.     1      1     1
+ 9       1  1999  105.    7728.     1      2     3
+10       1  1999  135.    9024.     1      2     3
+# ℹ 566 more rows</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb38"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb38-1"><a href="#cb38-1" aria-hidden="true" tabindex="-1"></a><span class="co"># # using indexed data.table -----------------------------------------</span></span>
+<span id="cb38-2"><a href="#cb38-2" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(data.table)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;data.table&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: &#39;data.table&#39;</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following objects are masked from &#39;package:dplyr&#39;:
+
+    between, first, last</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following object is masked from &#39;package:purrr&#39;:
+
+    transpose</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb43"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb43-1"><a href="#cb43-1" aria-hidden="true" tabindex="-1"></a><span class="fu">library</span>(collapse)</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stderr">
+<pre><code>Warning: package &#39;collapse&#39; was built under R version 4.4.3</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>collapse 2.1.3, see ?`collapse-package` or ?`collapse-documentation`</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>
+Attaching package: &#39;collapse&#39;</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following object is masked from &#39;package:data.table&#39;:
+
+    fdroplevels</code></pre>
+</div>
+<div class="cell-output cell-output-stderr">
+<pre><code>The following object is masked from &#39;package:stats&#39;:
+
+    D</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb49"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb49-1"><a href="#cb49-1" aria-hidden="true" tabindex="-1"></a>read_dt <span class="ot">&lt;-</span> \(con) {</span>
+<span id="cb49-2"><a href="#cb49-2" aria-hidden="true" tabindex="-1"></a>  dta <span class="ot">&lt;-</span> con <span class="sc">|&gt;</span> <span class="fu">collect</span>() <span class="sc">|&gt;</span> <span class="fu">qDT</span>()</span>
+<span id="cb49-3"><a href="#cb49-3" aria-hidden="true" tabindex="-1"></a>  <span class="fu">setkey</span>(dta, country, year)</span>
+<span id="cb49-4"><a href="#cb49-4" aria-hidden="true" tabindex="-1"></a>  <span class="fu">setindex</span>(dta, country, year, area, gender, age)</span>
+<span id="cb49-5"><a href="#cb49-5" aria-hidden="true" tabindex="-1"></a>  <span class="fu">return</span>(dta)</span>
+<span id="cb49-6"><a href="#cb49-6" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb49-7"><a href="#cb49-7" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-8"><a href="#cb49-8" aria-hidden="true" tabindex="-1"></a>get_dt_data <span class="ot">&lt;-</span> \(dt_con, one_sample) {</span>
+<span id="cb49-9"><a href="#cb49-9" aria-hidden="true" tabindex="-1"></a>  one_sample <span class="ot">&lt;-</span> <span class="fu">copy</span>(one_sample) <span class="sc">|&gt;</span> <span class="fu">qDT</span>()</span>
+<span id="cb49-10"><a href="#cb49-10" aria-hidden="true" tabindex="-1"></a>  <span class="fu">setkey</span>(one_sample, country, year, area, gender, age)</span>
+<span id="cb49-11"><a href="#cb49-11" aria-hidden="true" tabindex="-1"></a>  dt_con[one_sample, on <span class="ot">=</span> .(country, year, area, gender, age), nomatch <span class="ot">=</span> <span class="dv">0</span>]</span>
+<span id="cb49-12"><a href="#cb49-12" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb49-13"><a href="#cb49-13" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb49-14"><a href="#cb49-14" aria-hidden="true" tabindex="-1"></a>from_dt <span class="ot">&lt;-</span> <span class="fu">here</span>(pqt_fldr, from_files[[<span class="dv">1</span>]]) <span class="sc">|&gt;</span> arrow<span class="sc">::</span><span class="fu">open_dataset</span>() <span class="sc">|&gt;</span> <span class="fu">read_dt</span>()</span>
+<span id="cb49-15"><a href="#cb49-15" aria-hidden="true" tabindex="-1"></a><span class="fu">get_dt_data</span>(<span class="fu">copy</span>(from_dt), all_samples_files[[<span class="dv">1</span>]][[<span class="dv">2</span>]])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>     country  year    welfare    weight  area gender   age
+       &lt;int&gt; &lt;int&gt;      &lt;num&gt;     &lt;num&gt; &lt;int&gt;  &lt;int&gt; &lt;int&gt;
+  1:       1  1999   1.826466  5867.020     1      1     2
+  2:       1  1999  60.258480  1388.572     1      1     2
+  3:       1  1999  96.311431  6940.792     1      1     2
+  4:       1  1999 135.463741  5212.093     1      1     2
+  5:       1  1999 169.220456  2902.410     1      1     2
+ ---                                                      
+696:       2  2016 640.952019  2760.518     2      2     3
+697:       2  2016 727.867176 12637.093     2      2     3
+698:       2  2016 796.902416 13507.765     2      2     3
+699:       2  2016 879.914881  1194.038     2      2     3
+700:       2  2016 900.250147  3827.893     2      2     3</code></pre>
+</div>
+<div class="sourceCode cell-code" id="cb51"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb51-1"><a href="#cb51-1" aria-hidden="true" tabindex="-1"></a><span class="co"># # using collapse -----------------------------------------</span></span>
+<span id="cb51-2"><a href="#cb51-2" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb51-3"><a href="#cb51-3" aria-hidden="true" tabindex="-1"></a>get_collaps_data <span class="ot">&lt;-</span> \(dt_con, one_sample) {</span>
+<span id="cb51-4"><a href="#cb51-4" aria-hidden="true" tabindex="-1"></a>  dt_con <span class="sc">|&gt;</span></span>
+<span id="cb51-5"><a href="#cb51-5" aria-hidden="true" tabindex="-1"></a>    collapse<span class="sc">::</span><span class="fu">join</span>(</span>
+<span id="cb51-6"><a href="#cb51-6" aria-hidden="true" tabindex="-1"></a>      one_sample,</span>
+<span id="cb51-7"><a href="#cb51-7" aria-hidden="true" tabindex="-1"></a>      <span class="at">on =</span> <span class="fu">c</span>(<span class="st">&quot;country&quot;</span>, <span class="st">&quot;year&quot;</span>, <span class="st">&quot;area&quot;</span>, <span class="st">&quot;gender&quot;</span>, <span class="st">&quot;age&quot;</span>),</span>
+<span id="cb51-8"><a href="#cb51-8" aria-hidden="true" tabindex="-1"></a>      <span class="at">how =</span> <span class="st">&quot;semi&quot;</span>,</span>
+<span id="cb51-9"><a href="#cb51-9" aria-hidden="true" tabindex="-1"></a>      <span class="at">verbose =</span> <span class="cn">FALSE</span>,</span>
+<span id="cb51-10"><a href="#cb51-10" aria-hidden="true" tabindex="-1"></a>      <span class="at">sort =</span> <span class="cn">FALSE</span></span>
+<span id="cb51-11"><a href="#cb51-11" aria-hidden="true" tabindex="-1"></a>    )</span>
+<span id="cb51-12"><a href="#cb51-12" aria-hidden="true" tabindex="-1"></a>}</span>
+<span id="cb51-13"><a href="#cb51-13" aria-hidden="true" tabindex="-1"></a><span class="fu">get_collaps_data</span>(<span class="fu">copy</span>(from_dt), all_samples_files[[<span class="dv">1</span>]][[<span class="dv">2</span>]])</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
+<div class="cell-output cell-output-stdout">
+<pre><code>Key: &lt;country, year&gt;
+Index: &lt;country__year__area__gender__age&gt;
+     country  year    welfare     weight  area gender   age
+       &lt;int&gt; &lt;int&gt;      &lt;num&gt;      &lt;num&gt; &lt;int&gt;  &lt;int&gt; &lt;int&gt;
+  1:       1  1999   1.826466  5867.0202     1      1     2
+  2:       1  1999  12.878824   934.0422     2      1     1
+  3:       1  1999  33.629627  3208.5201     1      2     1
+  4:       1  1999  50.560204  1661.5309     1      2     4
+  5:       1  1999  60.258480  1388.5719     1      1     2
+ ---                                                       
+696:       2  2016 976.503123  5979.1533     1      1     2
+697:       2  2016 984.485539  7514.9821     1      1     2
+698:       2  2016 984.507709 12369.4938     2      1     4
+699:       2  2016 990.856708  5961.6607     1      2     3
+700:       2  2016 992.777367   147.4980     2      2     1</code></pre>
+</div>
+</div>
+<div class="cell">
+<div class="sourceCode cell-code" id="cb53"><pre class="sourceCode r code-with-copy"><code class="sourceCode r"><span id="cb53-1"><a href="#cb53-1" aria-hidden="true" tabindex="-1"></a><span class="co"># Benchmarking</span></span>
+<span id="cb53-2"><a href="#cb53-2" aria-hidden="true" tabindex="-1"></a>all_samples_files <span class="sc">|&gt;</span></span>
+<span id="cb53-3"><a href="#cb53-3" aria-hidden="true" tabindex="-1"></a>  purrr<span class="sc">::</span><span class="fu">walk2</span>(</span>
+<span id="cb53-4"><a href="#cb53-4" aria-hidden="true" tabindex="-1"></a>    from_files,</span>
+<span id="cb53-5"><a href="#cb53-5" aria-hidden="true" tabindex="-1"></a>    <span class="sc">~</span> {</span>
+<span id="cb53-6"><a href="#cb53-6" aria-hidden="true" tabindex="-1"></a>      con_nm <span class="ot">&lt;-</span> .y</span>
+<span id="cb53-7"><a href="#cb53-7" aria-hidden="true" tabindex="-1"></a>      req_list <span class="ot">&lt;-</span> .x</span>
+<span id="cb53-8"><a href="#cb53-8" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-9"><a href="#cb53-9" aria-hidden="true" tabindex="-1"></a>      con_tbl_pqt <span class="ot">&lt;-</span></span>
+<span id="cb53-10"><a href="#cb53-10" aria-hidden="true" tabindex="-1"></a>        <span class="fu">here</span>(<span class="st">&quot;data-testing&quot;</span>, con_nm) <span class="sc">|&gt;</span></span>
+<span id="cb53-11"><a href="#cb53-11" aria-hidden="true" tabindex="-1"></a>        arrow<span class="sc">::</span><span class="fu">open_dataset</span>()</span>
+<span id="cb53-12"><a href="#cb53-12" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-13"><a href="#cb53-13" aria-hidden="true" tabindex="-1"></a>      con_tbl_duckdb <span class="ot">&lt;-</span> <span class="fu">file.path</span>(duck_fldr, <span class="fu">paste0</span>(con_nm, <span class="st">&quot;.duckdb&quot;</span>)) <span class="sc">|&gt;</span></span>
+<span id="cb53-14"><a href="#cb53-14" aria-hidden="true" tabindex="-1"></a>        <span class="fu">duckdb</span>() <span class="sc">|&gt;</span></span>
+<span id="cb53-15"><a href="#cb53-15" aria-hidden="true" tabindex="-1"></a>        <span class="fu">dbConnect</span>()</span>
+<span id="cb53-16"><a href="#cb53-16" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-17"><a href="#cb53-17" aria-hidden="true" tabindex="-1"></a>      con_dt <span class="ot">&lt;-</span> <span class="fu">read_dt</span>(con_tbl_pqt)</span>
+<span id="cb53-18"><a href="#cb53-18" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-19"><a href="#cb53-19" aria-hidden="true" tabindex="-1"></a>      n <span class="ot">&lt;-</span> <span class="fu">nrow</span>(con_dt)</span>
+<span id="cb53-20"><a href="#cb53-20" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-21"><a href="#cb53-21" aria-hidden="true" tabindex="-1"></a>      md_out <span class="ot">&lt;-</span></span>
+<span id="cb53-22"><a href="#cb53-22" aria-hidden="true" tabindex="-1"></a>        bench<span class="sc">::</span><span class="fu">mark</span>(</span>
+<span id="cb53-23"><a href="#cb53-23" aria-hidden="true" tabindex="-1"></a>          <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_pqt_data</span>(con_tbl_pqt, .x) <span class="sc">|&gt;</span> <span class="fu">collect</span>()),</span>
+<span id="cb53-24"><a href="#cb53-24" aria-hidden="true" tabindex="-1"></a>          <span class="cf">if</span> (n <span class="sc">&lt;</span> <span class="fl">5e6</span><span class="sc">+</span><span class="dv">10</span>) <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_duck_data</span>(con_tbl_duckdb, .x) <span class="sc">|&gt;</span> <span class="fu">collect</span>()),</span>
+<span id="cb53-25"><a href="#cb53-25" aria-hidden="true" tabindex="-1"></a>          <span class="fu">read_dt</span>(con_tbl_pqt),</span>
+<span id="cb53-26"><a href="#cb53-26" aria-hidden="true" tabindex="-1"></a>          <span class="fu">copy</span>(con_dt),</span>
+<span id="cb53-27"><a href="#cb53-27" aria-hidden="true" tabindex="-1"></a>          <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_dt_data</span>(<span class="fu">copy</span>(con_dt), .x)),</span>
+<span id="cb53-28"><a href="#cb53-28" aria-hidden="true" tabindex="-1"></a>          <span class="fu">walk</span>(req_list, <span class="sc">~</span> <span class="fu">get_collaps_data</span>(con_dt, .x)),</span>
+<span id="cb53-29"><a href="#cb53-29" aria-hidden="true" tabindex="-1"></a>          <span class="at">iterations =</span> <span class="dv">3</span>,</span>
+<span id="cb53-30"><a href="#cb53-30" aria-hidden="true" tabindex="-1"></a>          <span class="at">check =</span> <span class="cn">FALSE</span></span>
+<span id="cb53-31"><a href="#cb53-31" aria-hidden="true" tabindex="-1"></a>        )</span>
+<span id="cb53-32"><a href="#cb53-32" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-33"><a href="#cb53-33" aria-hidden="true" tabindex="-1"></a>      <span class="fu">dbDisconnect</span>(con_tbl_duckdb, <span class="at">shutdown =</span> <span class="cn">TRUE</span>)</span>
+<span id="cb53-34"><a href="#cb53-34" aria-hidden="true" tabindex="-1"></a></span>
+<span id="cb53-35"><a href="#cb53-35" aria-hidden="true" tabindex="-1"></a>      <span class="fu">cat</span>(<span class="st">&quot;</span><span class="sc">\n\n\n</span><span class="st">&quot;</span>)</span>
+<span id="cb53-36"><a href="#cb53-36" aria-hidden="true" tabindex="-1"></a>      <span class="fu">cat</span>(con_nm, <span class="st">&quot;</span><span class="sc">\n</span><span class="st">&quot;</span>)</span>
+<span id="cb53-37"><a href="#cb53-37" aria-hidden="true" tabindex="-1"></a>      md_out <span class="sc">|&gt;</span></span>
+<span id="cb53-38"><a href="#cb53-38" aria-hidden="true" tabindex="-1"></a>        <span class="fu">select</span>(expression, min, median, mem_alloc) <span class="sc">|&gt;</span></span>
+<span id="cb53-39"><a href="#cb53-39" aria-hidden="true" tabindex="-1"></a>        <span class="fu">print</span>()</span>
+<span id="cb53-40"><a href="#cb53-40" aria-hidden="true" tabindex="-1"></a>    }</span>
+<span id="cb53-41"><a href="#cb53-41" aria-hidden="true" tabindex="-1"></a>  )</span></code><button title="Copy to Clipboard" class="code-copy-button"><i class="bi"></i></button></pre></div>
 </div>
 <blockquote class="blockquote">
 <p>Note, benchmarking startign with <code>walk</code> tests 10 random filterring queries of 50 countries/years/areas/genders/ages combinations each. Using DUCKDB for filterring was way too slow, therefore, it was not done. To speed up duckdb, one need to use IEJoin (perhaps).</p>
 </blockquote>
-<pre><code>
-sample_00001k 
-# A tibble: 5 × 4
-  expression                                                   min   median mem_alloc
-  &lt;bch:expr&gt;                                              &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
-1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x))) 240.23ms 263.65ms  686.56KB
-2 read_dt(con_tbl_pqt)                                      4.05ms   4.18ms    22.3KB
-3 copy(con_dt)                                              18.6µs   22.8µs   91.48KB
-4 walk(req_list, ~get_dt_data(copy(con_dt), .x))           23.56ms  25.36ms    1.99MB
-5 walk(req_list, ~get_collaps_data(con_dt, .x))            508.8µs  593.1µs  393.23KB
+<pre><code>sample_00001k 
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  &lt;bch:expr&gt;                                                                      &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                         203.65ms 209.69ms  688.78KB
+2 if (n &lt; 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x))) 414.74ms 424.86ms    6.31MB
+3 read_dt(con_tbl_pqt)                                                              3.19ms   3.76ms   22.59KB
+4 copy(con_dt)                                                                        32µs   34.8µs   91.48KB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                   20.22ms  20.61ms    2.04MB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                    465.9µs  572.8µs  403.13KB
                      
 
 
 sample_0001m 
-# A tibble: 5 × 4
-  expression                                                   min   median mem_alloc
-  &lt;bch:expr&gt;                                              &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
-1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))    845ms  891.3ms   469.1KB
-2 read_dt(con_tbl_pqt)                                     96.91ms  97.43ms    88.7MB
-3 copy(con_dt)                                              8.53ms   9.06ms    38.2MB
-4 walk(req_list, ~get_dt_data(copy(con_dt), .x))          135.26ms 136.08ms   423.4MB
-5 walk(req_list, ~get_collaps_data(con_dt, .x))            67.69ms  68.16ms   116.1MB
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  &lt;bch:expr&gt;                                                                      &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                         937.58ms 959.52ms  469.14KB
+2 if (n &lt; 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x))) 921.24ms       1s    7.78MB
+3 read_dt(con_tbl_pqt)                                                            113.63ms 113.94ms   88.72MB
+4 copy(con_dt)                                                                      8.43ms   8.95ms   38.21MB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                  181.03ms 181.62ms  423.39MB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                    74.72ms   83.1ms  116.16MB
                      
 
 
 sample_0005m 
-# A tibble: 5 × 4
-  expression                                                   min   median mem_alloc
-  &lt;bch:expr&gt;                                              &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
-1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))     1.3s    1.32s  535.98KB
-2 read_dt(con_tbl_pqt)                                     245.3ms 252.76ms   443.3MB
-3 copy(con_dt)                                              43.9ms  44.54ms  190.79MB
-4 walk(req_list, ~get_dt_data(copy(con_dt), .x))           571.3ms 573.38ms    2.06GB
-5 walk(req_list, ~get_collaps_data(con_dt, .x))            315.7ms 319.91ms  580.36MB
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  &lt;bch:expr&gt;                                                                      &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                            1.35s    1.36s  469.14KB
+2 if (n &lt; 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x)))    1.27s    1.35s   14.13MB
+3 read_dt(con_tbl_pqt)                                                            266.86ms  315.8ms   443.3MB
+4 copy(con_dt)                                                                      42.5ms  42.94ms  190.79MB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                  672.15ms  803.7ms    2.06GB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                   327.42ms 330.43ms  580.28MB
                      
 
 
 sample_0050m 
-# A tibble: 5 × 4
-  expression                                                   min   median mem_alloc
-  &lt;bch:expr&gt;                                              &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
-1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))    6.84s    6.95s  469.14KB
-2 read_dt(con_tbl_pqt)                                       2.75s    2.85s    4.33GB
-3 copy(con_dt)                                            435.12ms 439.11ms    1.86GB
-4 walk(req_list, ~get_dt_data(copy(con_dt), .x))              6.1s     6.2s   20.59GB
-5 walk(req_list, ~get_collaps_data(con_dt, .x))              3.46s    3.46s    5.67GB
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  &lt;bch:expr&gt;                                                                      &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                            6.71s    6.72s  469.14KB
+2 if (n &lt; 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x)))    400ns    600ns        0B
+3 read_dt(con_tbl_pqt)                                                                2.6s    2.74s    4.33GB
+4 copy(con_dt)                                                                    440.66ms 590.21ms    1.86GB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                     6.23s    6.42s   20.59GB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                      3.64s    3.67s    5.67GB
                      
 
 
 sample_0150m 
-# A tibble: 5 × 4
-  expression                                                   min   median mem_alloc
-  &lt;bch:expr&gt;                                              &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
-1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))      20s   20.17s  469.14KB
-2 read_dt(con_tbl_pqt)                                       7.52s    8.25s   12.98GB
-3 copy(con_dt)                                               1.31s    1.58s    5.59GB
-4 walk(req_list, ~get_dt_data(copy(con_dt), .x))            17.79s   18.76s   61.74GB
-5 walk(req_list, ~get_collaps_data(con_dt, .x))             10.55s   10.97s   16.99GB
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  &lt;bch:expr&gt;                                                                      &lt;bch:tm&gt; &lt;bch:tm&gt; &lt;bch:byt&gt;
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                           20.19s   20.34s  469.14KB
+2 if (n &lt; 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x)))    200ns    600ns        0B
+3 read_dt(con_tbl_pqt)                                                               7.61s    7.99s   12.98GB
+4 copy(con_dt)                                                                       1.28s    1.44s    5.59GB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                    18.82s   18.89s   61.77GB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                     10.43s   10.61s   17.01GB
 </code></pre>
 </section>
 
