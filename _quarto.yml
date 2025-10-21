@@ -1,0 +1,12 @@
+project:
+  # type: book
+  output-dir: vignettes/docs
+
+format:
+  html:
+    embed-resources: true
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: false
+    code-summary: "Click to expand/collapse"

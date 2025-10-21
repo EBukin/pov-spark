@@ -1,0 +1,324 @@
+---
+title: "Testing gini performance"
+editor: source
+---
+
+```{r}
+pkgload::load_all()
+library(microbenchmark)
+library(here)
+library(bench)
+```
+
+
+## Grouped data GINI performance
+
+```{r}
+library(arrow)
+library(data.table)
+library(dplyr)
+library(collapse)
+setDTthreads(32)
+set_collapse(nthreads = 32)
+library(DBI)
+library(duckdb)
+library(dbplyr)
+library(duckplyr)
+library(here)
+library(glue)
+
+# Data locations -------------------------------------------------------------
+
+pqt_fldr <- here("data-testing")
+duck_fldr <- here("data-testing-duck")
+from_files <- list.dirs(pqt_fldr, recursive = FALSE, full.names = F) |> sort()
+
+# Load test data --------------------------------------------------------------------
+dta <- dta_test |> qDT()
+setkey(dta, country, year)
+setindex(dta, country, year, area, gender, age)
+
+# Data.table -------------------------------------------------------------
+DT_copy <- \(x) {
+  xx <- copy(x)
+  return(xx)
+}
+
+dta_collect <- \(x) {
+  arrow::open_dataset(x) |> collect()
+}
+
+# Gini: based calculations --------------------------------------------------------
+DT_gini_base <- \(x) {
+  x[, .(gini_base = gini_base(welfare, weight)), keyby = .(country, year)]
+}
+DT_gini_base(dta)
+
+# Gini: collapse calculations --------------------------------------------------------
+DT_gini_collapse <- \(x) {
+  x[, .(gini = gini_collapse(welfare, weight)), keyby = .(country, year)]
+}
+dta_gini_dt <- DT_gini_collapse(dta)
+
+# Collapse  --------------------------------------------------------
+DT_gini_coll_collapse <- \(x) {
+  x |>
+    fgroup_by(country, year) |>
+    fsummarise(gini = gini_collapse(welfare, weight))
+}
+DT_gini_coll_collapse(dta)
+
+# Collapse without groupping --------------------------------------------------------
+DT_gini_coll_collapse2 <- \(x) {
+  x |>
+    fsummarise(gini = gini_collapse(welfare, weight))
+}
+gg <- dta |> fgroup_by(country, year)
+DT_gini_coll_collapse2(gg)
+
+# Collapse with reading data  --------------------------------------------------------
+DT_gini_coll_collapse3 <- \(x) {
+  dta_collect(x) |>
+    fgroup_by(country, year) |>
+    fsummarise(gini = gini_collapse(welfare, weight))
+}
+
+
+# Dplyr --------------------------------------------------------
+dta_test |>
+  group_by(country, year) |>
+  summarise(
+    gini_base = gini_base(welfare, weight),
+    gini = gini_collapse(welfare, weight)
+  )
+
+dplyr_gini <- function(dta) {
+  dta |>
+    mutate(
+      wf_wt = welfare * weight,
+      wf_wt_lag = dplyr::lag(wf_wt, default = 0L)
+    ) |>
+    mutate(
+      wf_wt_lag_cumsum = (cumsum(wf_wt_lag) + (wf_wt / 2)) * weight
+    ) |>
+    summarise(
+      gini = 1 - (2 * ((sum(wf_wt_lag_cumsum) / sum(weight)) / sum(wf_wt))),
+      .groups = "drop"
+    )
+}
+
+dta_gini_dplyr <- dta |> group_by(country, year) |> dplyr_gini()
+dta_gini_dt |> as.matrix() |> all.equal(as.matrix(dta_gini_dplyr))
+
+
+# # Arrow --(cumsum not supported) -------------------------------------------
+# dta_arrow <- arrow::open_dataset(file.path(pqt_fldr, "sample_0001m"))
+# pov_arr <- dta_arrow |> group_by(country, year) |>dplr_gini()
+
+# Duckdb --------------------------------------------
+duck_gini <- function(dta) {
+  dta |>
+    window_order(country, year, welfare) |>
+    dplyr_gini() |>
+    collect()
+}
+
+duck_con <- file.path(duck_fldr, paste0("sample_0001m", ".duckdb")) |>
+  duckdb() |>
+  dbConnect()
+
+dta_gini_duck <- tbl(duck_con, "dta") |> group_by(country, year) |> duck_gini()
+dta_gini_duck
+dbDisconnect(duck_con, shutdown = TRUE)
+
+```
+```{r eval=FALSE}
+from_files |>
+  purrr::walk(
+    ~ {
+      # browser()
+      dta <-
+        file.path(pqt_fldr, .x) |>
+        arrow::open_dataset() |>
+        collect() |>
+        qDT()
+
+      n <- nrow(dta)
+
+      gg <- dta |> fgroup_by(country, year)
+      setkey(dta, country, year)
+      setindex(dta, country, year, area, gender, age)
+
+      dta_duck <-
+        file.path(duck_fldr, paste0(.x, ".duckdb")) |>
+        duckdb() |>
+        dbConnect()
+
+      md_out <-
+        bench::mark(
+          dta_collect(file.path(pqt_fldr, .x)),
+          DT_copy(dta),
+          DT_gini_base(copy(dta)),
+          DT_gini_collapse(copy(dta)),
+          DT_gini_coll_collapse(dta),
+          DT_gini_coll_collapse2(gg),
+          DT_gini_coll_collapse3(file.path(pqt_fldr, .x)),
+          if (n < 51e6) dplyr_gini(group_by(dta, country, year)),
+          if (n < 6e6) duck_gini(group_by(tbl(dta_duck, "dta"), country, year)),
+          iterations = 3,
+          check = FALSE
+        )
+
+      dbDisconnect(dta_duck, shutdown = TRUE)
+      cat("\n\n\n")
+      cat(.x, "\n")
+      print(md_out |> select(expression, min, median, mem_alloc))
+    }
+  )
+
+all.equal(
+  DT_gini_base(dta) |> as.matrix(),
+  DT_gini_collapse(dta) |> as.matrix()
+)
+
+all.equal(
+  DT_gini_base(dta)$gini_base,
+  DT_gini_coll_collapse2(gg)$gini_base
+)
+
+all.equal(
+  DT_gini_coll_collapse(dta)$gini_base,
+  DT_gini_coll_collapse2(gg)$gini_base
+)
+```
+
+
+
+### Benchmarking results (copy)
+
+
+```sample_00001k 
+# A tibble: 9 × 4
+  expression                                                                       min   median mem_alloc
+  <bch:expr>                                                                  <bch:tm> <bch:tm> <bch:byt>
+1 "dta_collect(file.path(pqt_fldr, .x))"                                        6.41ms   8.18ms   12.41KB
+2 "DT_copy(dta)"                                                                22.1µs     29µs   91.48KB
+3 "DT_gini_base(copy(dta))"                                                    561.2µs  672.1µs   199.6KB
+4 "DT_gini_collapse(copy(dta))"                                                607.8µs  648.9µs  155.27KB
+5 "DT_gini_coll_collapse(dta)"                                                 210.4µs  244.6µs   73.99KB
+6 "DT_gini_coll_collapse2(gg)"                                                 163.6µs  199.2µs   64.66KB
+7 "DT_gini_coll_collapse3(file.path(pqt_fldr, .x))"                             6.92ms   7.28ms   80.31KB
+8 "if (n < 5.1e+07) dplyr_gini(group_by(dta, country, year))"                  74.56ms  74.61ms  411.38KB
+9 "if (n < 6e+06) duck_gini(group_by(tbl(dta_duck, \"dta\"), country, year))" 172.64ms 177.49ms    1.58MB
+                     
+
+
+sample_0001m 
+# A tibble: 9 × 4
+  expression                                                                       min   median mem_alloc
+  <bch:expr>                                                                  <bch:tm> <bch:tm> <bch:byt>
+1 "dta_collect(file.path(pqt_fldr, .x))"                                        85.4ms  87.07ms   11.09KB
+2 "DT_copy(dta)"                                                                 8.8ms   9.02ms   38.21MB
+3 "DT_gini_base(copy(dta))"                                                     61.1ms  61.35ms   76.89MB
+4 "DT_gini_collapse(copy(dta))"                                                 62.8ms  74.76ms   69.05MB
+5 "DT_gini_coll_collapse(dta)"                                                  39.6ms  40.59ms   57.44MB
+6 "DT_gini_coll_collapse2(gg)"                                                  25.8ms  38.18ms    49.8MB
+7 "DT_gini_coll_collapse3(file.path(pqt_fldr, .x))"                            127.3ms 145.27ms   80.34MB
+8 "if (n < 5.1e+07) dplyr_gini(group_by(dta, country, year))"                  171.4ms 171.56ms  177.09MB
+9 "if (n < 6e+06) duck_gini(group_by(tbl(dta_duck, \"dta\"), country, year))"  432.2ms 441.29ms    1.59MB
+                     
+
+
+sample_0005m 
+# A tibble: 9 × 4
+  expression                                                                       min   median mem_alloc
+  <bch:expr>                                                                  <bch:tm> <bch:tm> <bch:byt>
+1 "dta_collect(file.path(pqt_fldr, .x))"                                      104.23ms 115.52ms   11.09KB
+2 "DT_copy(dta)"                                                                44.3ms  56.03ms  190.79MB
+3 "DT_gini_base(copy(dta))"                                                   224.81ms 253.57ms  382.57MB
+4 "DT_gini_collapse(copy(dta))"                                               200.45ms 210.32ms  344.23MB
+5 "DT_gini_coll_collapse(dta)"                                                 134.3ms 138.25ms  286.31MB
+6 "DT_gini_coll_collapse2(gg)"                                                 96.76ms  164.6ms  248.16MB
+7 "DT_gini_coll_collapse3(file.path(pqt_fldr, .x))"                           256.68ms 281.09ms  400.76MB
+8 "if (n < 5.1e+07) dplyr_gini(group_by(dta, country, year))"                 490.88ms 582.43ms  878.97MB
+9 "if (n < 6e+06) duck_gini(group_by(tbl(dta_duck, \"dta\"), country, year))"    1.31s    1.41s    1.59MB
+                     
+
+
+sample_0050m 
+# A tibble: 9 × 4
+  expression                                                                       min   median mem_alloc
+  <bch:expr>                                                                  <bch:tm> <bch:tm> <bch:byt>
+1 "dta_collect(file.path(pqt_fldr, .x))"                                      411.86ms 453.75ms   11.09KB
+2 "DT_copy(dta)"                                                              432.05ms 464.61ms    1.86GB
+3 "DT_gini_base(copy(dta))"                                                      2.56s    2.67s    3.73GB
+4 "DT_gini_collapse(copy(dta))"                                                  2.26s    2.27s    3.36GB
+5 "DT_gini_coll_collapse(dta)"                                                   1.32s    1.62s    2.79GB
+6 "DT_gini_coll_collapse2(gg)"                                                   1.15s    1.32s    2.42GB
+7 "DT_gini_coll_collapse3(file.path(pqt_fldr, .x))"                              2.46s    2.47s    3.91GB
+8 "if (n < 5.1e+07) dplyr_gini(group_by(dta, country, year))"                    4.33s    4.41s    8.57GB
+9 "if (n < 6e+06) duck_gini(group_by(tbl(dta_duck, \"dta\"), country, year))"    300ns    300ns        0B
+
+
+
+sample_0150m 
+# A tibble: 9 × 4
+  expression                                                                       min   median mem_alloc
+  <bch:expr>                                                                  <bch:tm> <bch:tm> <bch:byt>
+1 "dta_collect(file.path(pqt_fldr, .x))"                                         1.28s    1.32s   11.09KB
+2 "DT_copy(dta)"                                                                 1.29s    1.58s    5.59GB
+3 "DT_gini_base(copy(dta))"                                                      7.62s    7.64s    11.2GB
+4 "DT_gini_collapse(copy(dta))"                                                  6.48s    6.92s   10.09GB
+5 "DT_gini_coll_collapse(dta)"                                                    3.6s    3.65s    8.38GB
+6 "DT_gini_coll_collapse2(gg)"                                                   2.81s    3.59s    7.26GB
+7 "DT_gini_coll_collapse3(file.path(pqt_fldr, .x))"                              6.73s    7.26s   11.73GB
+8 "if (n < 5.1e+07) dplyr_gini(group_by(dta, country, year))"                    200ns    400ns        0B
+9 "if (n < 6e+06) duck_gini(group_by(tbl(dta_duck, \"dta\"), country, year))"    200ns    500ns        0B
+
+```
+
+### Query analysis
+
+```{r}
+# Duckdb SQL --------------------------------------------
+duck_con <- file.path(duck_fldr, paste0("sample_0050m", ".duckdb")) |>
+  duckdb() |> dbConnect()
+
+tbl(duck_con, "dta") |> group_by(country, year) |>
+    window_order(country, year, welfare) |>
+    dplyr_gini()  |>
+    show_query()
+
+duck_gini_sql <- 
+'
+EXPLAIN ANALYZE
+SELECT
+  country,
+  "year",
+  1.0 - (2.0 * ((SUM( (wf_wt_lag_cumsum  + (welfare * weight / 2.0)) * weight ) / SUM(weight)) / SUM(welfare * weight))) AS gini
+FROM (
+  SELECT
+    q01.*,
+    SUM(wf_wt_lag) OVER (PARTITION BY country, "year" ORDER BY welfare ROWS UNBOUNDED PRECEDING) AS wf_wt_lag_cumsum
+  FROM (
+    SELECT
+      country,
+      "year",
+      welfare,
+      weight,
+      LAG(welfare * weight, 1, 0) OVER (PARTITION BY country, "year" ORDER BY  welfare) AS wf_wt_lag
+    FROM dta
+  ) q01
+) q01
+GROUP BY country, "year"
+'
+dbGetQuery(duck_con, duck_gini_sql)
+dbDisconnect(duck_con, shutdown = TRUE)
+```
+
+### Functions used for gini calculation
+
+```{r}
+gini_base
+gini_collapse
+```

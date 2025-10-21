@@ -1,0 +1,229 @@
+---
+title: "Data Generation for Analysis"
+format: html
+editor: source
+---
+
+```{r setup}
+# Data generation for testing purposes
+library(data.table)
+library(dplyr)
+library(purrr)
+library(dtplyr)
+library(arrow)
+library(scales)
+library(stringr)
+
+# Data setup -------------------------------------------------------------
+set.seed(123)
+
+# Gata generation template -----------------------------------------------
+
+get_country_table_new <- function(
+  n_total = 5 * 10^6,
+  n_countries = 10L,
+  n_years_country = 2:6,
+  ...
+) {
+  # n_total <- 1 * 10^6 # Total number of observations in the dataset
+  # n_years_country <- 2:6 # For each country number of years is sampled from this range
+  n_pop_country <- 10:50 # For each country population is sampled from this range
+  out <-
+    data.table(
+      country = as.integer(1:n_countries),
+      n_obs = sample(10:250, n_countries, replace = TRUE),
+      n_years = sample(n_years_country, n_countries, replace = TRUE),
+      urban_range = runif(n_countries, 0.25, 0.9) #,
+      # female_range = runif(n_countries, 0.45, 0.55),
+      # total_pop = sample(n_pop_country, n_countries, replace = TRUE) * n_total
+    )
+  out |>
+    mutate(
+      n_obs = round(n_obs / sum(n_obs) * n_total),
+      total_pop = n_obs * runif(nrow(out), 5, 15) * 1000
+    )
+}
+
+get_country_data <- function(
+  country_id,
+  n_obs,
+  n_years,
+  urban_range,
+  total_pop
+) {
+  female_share <- runif(1, 0.45, 0.55)
+  all_wt <- runif(n_obs, 0, 1)
+
+  years_range <- sample(1990:2025, n_years, replace = TRUE)
+  if (length(years_range) > 1) {
+    years_range_val <- sample(years_range, n_obs, replace = TRUE)
+  } else {
+    years_range_val <- rep(years_range, n_obs)
+  }
+
+  gender <- sample(
+    1:2,
+    n_obs,
+    replace = TRUE,
+    prob = c(female_share, 1 - female_share)
+  )
+  age_group <- sample(
+    1:5,
+    n_obs,
+    replace = TRUE,
+    prob = c(0.2, 0.3, 0.25, 0.15, 0.1)
+  )
+  urban_rural <- sample(
+    1:2,
+    n_obs,
+    replace = TRUE,
+    prob = c(urban_range, 1 - urban_range)
+  )
+
+  data.table(
+    # country = country_id,
+    year = years_range_val,
+    welfare = runif(n_obs, 0, 1000),
+    weight = all_wt / sum(all_wt) * total_pop,
+    area = urban_rural,
+    gender = gender,
+    age = age_group
+  ) |>
+    arrange(year, welfare)
+}
+```
+
+
+# Example of the generated data
+
+
+```{r}
+get_country_data(1L, 1000L, 3, 0.5, 1000000L) 
+get_country_table_new(5*10^6, 150)
+```
+
+
+# Small sample dataset for testing
+
+```{r}
+set.seed(1234)
+
+dta_full <-
+  get_country_table_new(1 * 10^3, 2, n_years_country = 1:2)[,
+    {
+      get_country_data(country, n_obs, n_years, urban_range, total_pop)
+    },
+    by = .(country)
+  ] |>
+  as_tibble() |>
+  arrange(country, year, welfare, gender, area, age) |>
+  as.data.frame()
+
+dta_test <- dta_full
+usethis::use_data(dta_test, overwrite = TRUE)
+
+dta_test |> write_dataset("data-testing/sample_1k")
+```
+
+
+```{r eval=false}
+nm_fmt <- \(x) {
+  scales::label_number(scale_cut = scales::cut_short_scale())(x) |>
+    stringr::str_to_lower()
+}
+
+c(1 * 10^6, 5 * 10^6, 50 * 10^6, 150 * 10^6) |>
+  walk(
+    ~ {
+      get_country_table_new(.x, 150)[,
+        {
+          get_country_data(country, n_obs, n_years, urban_range, total_pop)
+        },
+        by = .(country)
+      ] |>
+        arrange(country, year, welfare, gender, area) |>
+        group_by(country) |>
+        write_dataset(str_c("data-testing/sample_", nm_fmt(.x)))
+    }
+  )
+  
+```
+
+## Checking data
+
+```{r}
+list.dirs("data-testing", recursive = FALSE) |>
+  purrr::map(
+    ~ {
+      arrow::open_dataset(.x) |>
+        dtplyr::lazy_dt() |>
+        summarise(
+          n_obs = n(),
+          n_countries = n_distinct(country),
+          n_years = n_distinct(year),
+          n_age = n_distinct(age),
+          n_gender = n_distinct(gender),
+          mean_welfare = mean(welfare),
+          total_pop = sum(weight) / n_distinct(year)
+        ) |>
+        as.data.frame() |>
+        mutate(sample = basename(.x)) |>
+        select(sample, everything())
+    }
+  ) |>
+  bind_rows() |> 
+  arrange(n_obs)
+```
+
+
+## Resaving data in duckdb format
+
+```{r duck-db-setup, eval=FALSE}
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
+library(DBI)
+library(duckdb)
+library(dbplyr)
+library(duckplyr)
+library(here)
+library(glue)
+
+
+pkt_fldr <- here("data-testing")
+duck_fldr <- here("data-testing-duck")
+dir.create(duck_fldr)
+
+
+from_file <- list.dirs(pkt_fldr, recursive = FALSE, full.names = F) |> sort()
+from_pkt <- from_file[[2]]
+
+# duck_dr <- duckdb(file.path("data-testing-duck", paste(from_pkt, ".duckdb")))
+# con <- dbConnect(duck_dr)
+
+# dbGetQuery(conn = con, "SELECT current_setting('threads') AS threads")
+# dbGetQuery(conn = con, "SELECT current_setting('memory_limit') AS memlimit")
+
+# tbl_nm <- from_pkt
+pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+
+reloar_q <- "
+DROP TABLE IF EXISTS dta;
+CREATE TABLE dta AS SELECT * FROM read_parquet('{pqt_path}');
+ANALYZE dta;
+VACUUM;
+"
+
+from_file |>
+  purrr::walk(
+    ~ {
+      from_pkt <- .x
+      duck_dr <- duckdb(file.path("data-testing-duck", paste0(from_pkt, ".duckdb")))
+      con <- dbConnect(duck_dr)
+      tbl_nm <- from_pkt
+      pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+
+      dbExecute(con, statement = glue(reloar_q))
+      dbDisconnect(con, shutdown = TRUE)
+    }
+  )
+```

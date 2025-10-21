@@ -1,0 +1,228 @@
+---
+title: "Testing random access to the data performance"
+editor: source
+---
+
+```{r}
+pkgload::load_all()
+library(microbenchmark)
+library(bench)
+```
+
+## Read random countries/years/areas/genders/ages from the data
+
+```{r eval}
+library(purrr)
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
+library(DBI)
+library(duckdb)
+library(dbplyr)
+library(duckplyr)
+library(here)
+library(glue)
+
+
+pqt_fldr <- here("data-testing")
+# pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+duck_fldr <- here("data-testing-duck")
+
+from_files <- list.dirs(pqt_fldr, recursive = FALSE, full.names = F) |> sort()
+
+# Get a random sample of queries
+dta <- here(pqt_fldr, from_files[[1]]) |> arrow::open_dataset()
+
+# Setting the random access options
+set.seed(12345)
+n <- 10
+n_size <- 50
+all_samples_files <-
+  from_files |>
+  map(
+    ~ {
+      all_options <- here(pqt_fldr, .x) |>
+        arrow::open_dataset() |>
+        distinct(country, year, area, gender, age) |>
+        collect()
+      1:n |> map(~ sample_n(all_options, n_size))
+    }
+  )
+
+# using built-in arrow functions -------------------------------------------
+get_pqt_data <- \(con_tbl, one_sample) {
+  con_tbl |>
+    semi_join(
+      one_sample,
+      by = c("country", "year", "area", "gender", "age"),
+      copy = TRUE
+    )
+}
+here("data-testing", from_files[[3]]) |>
+  arrow::open_dataset() |>
+  get_pqt_data(one_sample = all_samples_files[[3]][[1]]) |>
+  collect()
+
+# using duckdb -----------------------------------------
+get_duck_data <- \(con, one_sample) {
+  tbl(con, "dta") |> get_pqt_data(one_sample)
+}
+
+duck_con <- duckdb(file.path(duck_fldr, paste0(from_files[[1]], ".duckdb"))) |>
+  dbConnect()
+get_duck_data(duck_con, all_samples_files[[1]][[1]]) |> show_query()
+get_duck_data(duck_con, all_samples_files[[1]][[1]]) |> collect()
+
+# # using indexed data.table -----------------------------------------
+library(data.table)
+library(collapse)
+
+read_dt <- \(con) {
+  dta <- con |> collect() |> qDT()
+  setkey(dta, country, year)
+  setindex(dta, country, year, area, gender, age)
+  return(dta)
+}
+
+get_dt_data <- \(dt_con, one_sample) {
+  one_sample <- copy(one_sample) |> qDT()
+  setkey(one_sample, country, year, area, gender, age)
+  dt_con[one_sample, on = .(country, year, area, gender, age), nomatch = 0]
+}
+
+from_dt <- here(pqt_fldr, from_files[[1]]) |> arrow::open_dataset() |> read_dt()
+get_dt_data(copy(from_dt), all_samples_files[[1]][[2]])
+
+# # using collapse -----------------------------------------
+
+get_collaps_data <- \(dt_con, one_sample) {
+  dt_con |>
+    collapse::join(
+      one_sample,
+      on = c("country", "year", "area", "gender", "age"),
+      how = "semi",
+      verbose = FALSE,
+      sort = FALSE
+    )
+}
+get_collaps_data(copy(from_dt), all_samples_files[[1]][[2]])
+
+```
+
+```{r eval=FALSE}
+# Benchmarking
+all_samples_files |>
+  purrr::walk2(
+    from_files,
+    ~ {
+      con_nm <- .y
+      req_list <- .x
+
+      con_tbl_pqt <-
+        here("data-testing", con_nm) |>
+        arrow::open_dataset()
+
+      con_tbl_duckdb <- file.path(duck_fldr, paste0(con_nm, ".duckdb")) |>
+        duckdb() |>
+        dbConnect()
+
+      con_dt <- read_dt(con_tbl_pqt)
+
+      n <- nrow(con_dt)
+
+      md_out <-
+        bench::mark(
+          walk(req_list, ~ get_pqt_data(con_tbl_pqt, .x) |> collect()),
+          if (n < 5e6+10) walk(req_list, ~ get_duck_data(con_tbl_duckdb, .x) |> collect()),
+          read_dt(con_tbl_pqt),
+          copy(con_dt),
+          walk(req_list, ~ get_dt_data(copy(con_dt), .x)),
+          walk(req_list, ~ get_collaps_data(con_dt, .x)),
+          iterations = 3,
+          check = FALSE
+        )
+
+      dbDisconnect(con_tbl_duckdb, shutdown = TRUE)
+
+      cat("\n\n\n")
+      cat(con_nm, "\n")
+      md_out |>
+        select(expression, min, median, mem_alloc) |>
+        print()
+    }
+  )
+```
+
+
+> Note, benchmarking startign with `walk` tests 10 random filterring queries of 50 countries/years/areas/genders/ages combinations each.
+> Using DUCKDB for filterring was way too slow, therefore, it was not done.
+> To speed up duckdb, one need to use IEJoin (perhaps). 
+
+
+```
+sample_00001k 
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  <bch:expr>                                                                      <bch:tm> <bch:tm> <bch:byt>
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                         203.65ms 209.69ms  688.78KB
+2 if (n < 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x))) 414.74ms 424.86ms    6.31MB
+3 read_dt(con_tbl_pqt)                                                              3.19ms   3.76ms   22.59KB
+4 copy(con_dt)                                                                        32µs   34.8µs   91.48KB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                   20.22ms  20.61ms    2.04MB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                    465.9µs  572.8µs  403.13KB
+                     
+
+
+sample_0001m 
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  <bch:expr>                                                                      <bch:tm> <bch:tm> <bch:byt>
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                         937.58ms 959.52ms  469.14KB
+2 if (n < 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x))) 921.24ms       1s    7.78MB
+3 read_dt(con_tbl_pqt)                                                            113.63ms 113.94ms   88.72MB
+4 copy(con_dt)                                                                      8.43ms   8.95ms   38.21MB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                  181.03ms 181.62ms  423.39MB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                    74.72ms   83.1ms  116.16MB
+                     
+
+
+sample_0005m 
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  <bch:expr>                                                                      <bch:tm> <bch:tm> <bch:byt>
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                            1.35s    1.36s  469.14KB
+2 if (n < 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x)))    1.27s    1.35s   14.13MB
+3 read_dt(con_tbl_pqt)                                                            266.86ms  315.8ms   443.3MB
+4 copy(con_dt)                                                                      42.5ms  42.94ms  190.79MB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                  672.15ms  803.7ms    2.06GB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                   327.42ms 330.43ms  580.28MB
+                     
+
+
+sample_0050m 
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  <bch:expr>                                                                      <bch:tm> <bch:tm> <bch:byt>
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                            6.71s    6.72s  469.14KB
+2 if (n < 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x)))    400ns    600ns        0B
+3 read_dt(con_tbl_pqt)                                                                2.6s    2.74s    4.33GB
+4 copy(con_dt)                                                                    440.66ms 590.21ms    1.86GB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                     6.23s    6.42s   20.59GB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                      3.64s    3.67s    5.67GB
+                     
+
+
+sample_0150m 
+# A tibble: 6 × 4
+  expression                                                                           min   median mem_alloc
+  <bch:expr>                                                                      <bch:tm> <bch:tm> <bch:byt>
+1 walk(req_list, ~collect(get_pqt_data(con_tbl_pqt, .x)))                           20.19s   20.34s  469.14KB
+2 if (n < 5e+06 + 10) walk(req_list, ~collect(get_duck_data(con_tbl_duckdb, .x)))    200ns    600ns        0B
+3 read_dt(con_tbl_pqt)                                                               7.61s    7.99s   12.98GB
+4 copy(con_dt)                                                                       1.28s    1.44s    5.59GB
+5 walk(req_list, ~get_dt_data(copy(con_dt), .x))                                    18.82s   18.89s   61.77GB
+6 walk(req_list, ~get_collaps_data(con_dt, .x))                                     10.43s   10.61s   17.01GB
+
+```
+
+
+

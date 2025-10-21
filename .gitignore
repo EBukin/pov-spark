@@ -10,3 +10,9 @@ metastore_db/
 *.duckdb*
 *.wal
 *.tmp/
+man/
+
+/.quarto/
+*.html
+*_files
+.vdoc*.r

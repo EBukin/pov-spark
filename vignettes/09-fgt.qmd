@@ -1,0 +1,215 @@
+---
+title: "Testing random access to the data performance"
+editor: source
+---
+
+```{r}
+pkgload::load_all()
+library(microbenchmark)
+library(bench)
+```
+
+## Read random countries/years/areas/genders/ages from the data
+
+```{r eval=FALSE}
+library(purrr)
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
+library(DBI)
+library(duckdb)
+library(dbplyr)
+library(duckplyr)
+library(here)
+library(glue)
+
+source(here("R/fgt0.R"))
+
+pqt_fldr <- here("data-testing")
+duck_fldr <- here("data-testing-duck")
+
+from_files <- list.dirs(pqt_fldr, recursive = FALSE, full.names = F) |> sort()
+
+# Load data
+dta <-
+  here("data-testing", from_files[[2]]) |>
+  arrow::open_dataset() |>
+  collect()
+
+pl_local <- collapse::fmedian(dta$welfare, w = dta$weight) / 2
+
+library(data.table)
+library(collapse)
+
+# Collapse --------------------------------------------------------------------
+get_fgt_collapse <- \(x, pl) {
+  x |>
+    fgroup_by(country, year) |>
+    fsummarise(
+      fgt0 = fgt_collapse(welfare, weight, povline = pl, alpha = 0),
+      fgt1 = fgt_collapse(welfare, weight, povline = pl, alpha = 1),
+      fgt2 = fgt_collapse(welfare, weight, povline = pl, alpha = 2)
+    )
+}
+
+# data.table ----------------------------------------------------------------
+get_fgt_DT <- \(x, pl) {
+  x[,
+    .(
+      fgt0 = fgt_collapse(welfare, weight, povline = pl, alpha = 0),
+      fgt1 = fgt_collapse(welfare, weight, povline = pl, alpha = 1),
+      fgt2 = fgt_collapse(welfare, weight, povline = pl, alpha = 2)
+    ),
+    keyby = .(country, year)
+  ]
+}
+get_fgt_collapse(copy(qDT(dta)), pl_local)
+get_fgt_DT(copy(qDT(dta)), pl_local)
+
+
+# Dplyr --------------------------------------------------------------------
+get_fgt_dplyr <- function(dta, pl) {
+  dta |>
+    mutate(
+      poor = as.integer(welfare <= pl),
+      dist = 1 - (welfare / pl),
+      hc = poor * weight
+    ) |>
+    summarise(
+      hc0 = sum(hc),
+      fgt0 = sum(hc) / sum(weight),
+      fgt1 = sum(hc * dist) / sum(weight),
+      fgt2 = sum(hc * dist^2) / sum(weight),
+      .groups = "drop"
+    ) |>
+    select(country, year, fgt0, fgt1, fgt2)
+}
+
+pov_dpl <- dta |> group_by(country, year) |> get_fgt_dplyr(pl_local)
+pov_col <- get_fgt_collapse(dta, pl_local)
+all.equal(pov_dpl, pov_col)
+
+# Arrow --------------------------------------------------------------------
+dta_arrow <- arrow::open_dataset("data-testing/sample_0001m")
+pov_arr <- dta_arrow |>
+  group_by(country, year) |>
+  get_fgt_dplyr(pl_local) |>
+  collect() |>
+  arrange(country, year)
+
+all.equal(pov_dpl, pov_arr)
+
+# DuckDB --------------------------------------------------------------------
+duck_con <- file.path(duck_fldr, "sample_0001m.duckdb") |> duckdb() |> dbConnect()
+pov_duck <- tbl(duck_con, "dta") |>
+  group_by(country, year) |>
+  get_fgt_dplyr(pl_local) |>
+  collect() |>
+  arrange(country, year)
+all.equal(pov_dpl, pov_duck)
+DBI::dbDisconnect(duck_con, shutdown = TRUE)
+
+
+here(pqt_fldr) |>
+  list.dirs(recursive = FALSE, full.names = F) |>
+  # (\(x) x[1:3])() |> 
+  purrr::walk(
+    ~ {
+      dta_arrow <- arrow::open_dataset(file.path(pqt_fldr, .x))
+      dta <- dta_arrow |> collect() |> qDT()
+
+      n <- nrow(dta)
+      
+      setkey(dta, country, year)
+      setindex(dta, country, year, area, gender, age)
+
+      dta_grp <- dta |> group_by(country, year)
+      
+      dta_duck <- file.path(duck_fldr, paste0(.x, ".duckdb")) |> duckdb() |> dbConnect()
+
+      md_out <-
+        bench::mark(
+          get_fgt_collapse(dta, pl_local),
+          get_fgt_DT(copy(dta), pl_local),
+          if (n < 50e6+10) get_fgt_dplyr(group_by(dta, country, year), pl_local),
+          if (n < 50e6+10) get_fgt_dplyr(dta_grp, pl_local),
+          get_fgt_dplyr(group_by(dta_arrow, country, year), pl_local) |> collect(),
+          get_fgt_dplyr(group_by(tbl(dta_duck, "dta"), country, year), pl_local) |> collect(),
+          iterations = 3,
+          check = FALSE
+        )
+
+      DBI::dbDisconnect(dta_duck, shutdown = TRUE)
+      
+      cat("\n\n\n")
+      cat(.x, "\n")
+      print(md_out |> select(expression, min, median, mem_alloc))
+    }
+  )
+
+```
+
+> Note: row 6 in each benchmark uses pre-loaded DuckDB tables and is the fastest option for 
+> poverty measurement with large datasets.
+
+
+```
+sample_00001k 
+# A tibble: 6 × 4
+  expression                                                                               min   median mem_alloc
+  <bch:expr>                                                                          <bch:tm> <bch:tm> <bch:byt>
+1 "get_fgt_collapse(dta, pl_local)"                                                    399.5µs  432.7µs   156.6KB
+2 "get_fgt_DT(copy(dta), pl_local)"                                                    584.3µs  747.3µs   258.3KB
+3 "if (n < 5e+07 + 10) get_fgt_dplyr(group_by(dta, country, year), pl_local)"           41.7ms   42.7ms   336.3KB
+4 "if (n < 5e+07 + 10) get_fgt_dplyr(dta_grp, pl_local)"                                37.7ms   38.1ms   209.9KB
+5 "collect(get_fgt_dplyr(group_by(dta_arrow, country, year), pl_local))"                86.2ms     92ms   455.6KB
+6 "collect(get_fgt_dplyr(group_by(tbl(dta_duck, \"dta\"), country, year), pl_local))"    214ms    215ms     1.4MB
+
+
+sample_0001m 
+# A tibble: 6 × 4
+  expression                                                                               min   median mem_alloc
+  <bch:expr>                                                                          <bch:tm> <bch:tm> <bch:byt>
+1 "get_fgt_collapse(dta, pl_local)"                                                      105ms    127ms   145.6MB
+2 "get_fgt_DT(copy(dta), pl_local)"                                                      112ms    232ms  118.87MB
+3 "if (n < 5e+07 + 10) get_fgt_dplyr(group_by(dta, country, year), pl_local)"            124ms    131ms  146.47MB
+4 "if (n < 5e+07 + 10) get_fgt_dplyr(dta_grp, pl_local)"                                 102ms    224ms   96.01MB
+5 "collect(get_fgt_dplyr(group_by(dta_arrow, country, year), pl_local))"                 205ms    208ms  385.81KB
+6 "collect(get_fgt_dplyr(group_by(tbl(dta_duck, \"dta\"), country, year), pl_local))"    219ms    226ms    1.43MB
+
+
+sample_0005m 
+# A tibble: 6 × 4
+  expression                                                                               min   median mem_alloc
+  <bch:expr>                                                                          <bch:tm> <bch:tm> <bch:byt>
+1 "get_fgt_collapse(dta, pl_local)"                                                      534ms    545ms  725.41MB
+2 "get_fgt_DT(copy(dta), pl_local)"                                                      627ms    664ms  592.41MB
+3 "if (n < 5e+07 + 10) get_fgt_dplyr(group_by(dta, country, year), pl_local)"            411ms    554ms  726.28MB
+4 "if (n < 5e+07 + 10) get_fgt_dplyr(dta_grp, pl_local)"                                 327ms    457ms  477.46MB
+5 "collect(get_fgt_dplyr(group_by(dta_arrow, country, year), pl_local))"                 418ms    423ms  385.81KB
+6 "collect(get_fgt_dplyr(group_by(tbl(dta_duck, \"dta\"), country, year), pl_local))"    237ms    237ms    1.43MB
+
+
+sample_0050m 
+# A tibble: 6 × 4
+  expression                                                                               min   median mem_alloc
+  <bch:expr>                                                                          <bch:tm> <bch:tm> <bch:byt>
+1 "get_fgt_collapse(dta, pl_local)"                                                       5.3s    5.62s    7.08GB
+2 "get_fgt_DT(copy(dta), pl_local)"                                                       5.3s    5.59s    5.78GB
+3 "if (n < 5e+07 + 10) get_fgt_dplyr(group_by(dta, country, year), pl_local)"            3.63s    3.65s    7.08GB
+4 "if (n < 5e+07 + 10) get_fgt_dplyr(dta_grp, pl_local)"                                 2.59s    2.76s    4.66GB
+5 "collect(get_fgt_dplyr(group_by(dta_arrow, country, year), pl_local))"                 2.82s    2.88s  385.81KB
+6 "collect(get_fgt_dplyr(group_by(tbl(dta_duck, \"dta\"), country, year), pl_local))" 305.08ms 310.83ms    1.43MB
+
+
+sample_0150m 
+# A tibble: 6 × 4
+  expression                                                                               min   median mem_alloc
+  <bch:expr>                                                                          <bch:tm> <bch:tm> <bch:byt>
+1 "get_fgt_collapse(dta, pl_local)"                                                     15.19s   15.81s   21.23GB
+2 "get_fgt_DT(copy(dta), pl_local)"                                                     16.18s   16.35s   17.35GB
+3 "if (n < 5e+07 + 10) get_fgt_dplyr(group_by(dta, country, year), pl_local)"            200ns      1µs        0B
+4 "if (n < 5e+07 + 10) get_fgt_dplyr(dta_grp, pl_local)"                                 400ns    800ns        0B
+5 "collect(get_fgt_dplyr(group_by(dta_arrow, country, year), pl_local))"                 8.07s    8.32s  385.81KB
+6 "collect(get_fgt_dplyr(group_by(tbl(dta_duck, \"dta\"), country, year), pl_local))" 442.41ms 453.41ms    1.43MB
+
+```
