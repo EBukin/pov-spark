@@ -68,7 +68,6 @@ vars_focus <- c(
   "code",
   "year",
   "welfare",
-  "weight_h",
   "weight_p",
   "cpi2021",
   "icp2021",
@@ -103,6 +102,9 @@ dta_full <-
     -welfare,
     -cpi2021,
     -icp2021
+  ) |>
+  rename(
+    weight = weight_p
   ) |>
   collect() |>
   mutate(code = as_factor(code), year = as.integer(year)) |>
@@ -143,7 +145,6 @@ dta_full |>
   )
 ```
 
-
 ## Resaving data in duckdb format
 
 ```{r duck-db-setup, eval=FALSE}
@@ -156,22 +157,11 @@ library(duckplyr)
 library(here)
 library(glue)
 
-
 pkt_fldr <- here("data-testing")
 duck_fldr <- here("data-testing-duck")
 dir.create(duck_fldr)
 
-
-from_file <- list.dirs(pkt_fldr, recursive = FALSE, full.names = F) |> sort()
-from_pkt <- from_file[[2]]
-
-# duck_dr <- duckdb(file.path("data-testing-duck", paste(from_pkt, ".duckdb")))
-# con <- dbConnect(duck_dr)
-
-# dbGetQuery(conn = con, "SELECT current_setting('threads') AS threads")
-# dbGetQuery(conn = con, "SELECT current_setting('memory_limit') AS memlimit")
-
-# tbl_nm <- from_pkt
+from_pkt <- "gmd-simple" 
 pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
 
 reloar_q <- "
@@ -180,18 +170,21 @@ CREATE TABLE dta AS SELECT * FROM read_parquet('{pqt_path}');
 ANALYZE dta;
 VACUUM;
 "
+duck_dr <- duckdb(file.path("data-testing-duck", paste0(from_pkt, ".duckdb")))
+con <- dbConnect(duck_dr)
+pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
 
-from_file |>
-  purrr::walk(
-    ~ {
-      from_pkt <- .x
-      duck_dr <- duckdb(file.path("data-testing-duck", paste0(from_pkt, ".duckdb")))
-      con <- dbConnect(duck_dr)
-      tbl_nm <- from_pkt
-      pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+dbExecute(con, statement = glue(reloar_q))
 
-      dbExecute(con, statement = glue(reloar_q))
-      dbDisconnect(con, shutdown = TRUE)
-    }
-  )
+# Adding dictionary table
+dta_dic <- readr::read_csv(here("data-testing", "gmd-simple-dic.csv"))
+dbWriteTable(con, "dic", dta_dic, overwrite = TRUE)
+
+# Checking
+tbl(con, "dta") |> glimpse()
+tbl(con, "dic") |> glimpse()
+
+# Disconnecting
+dbDisconnect(con, shutdown = TRUE)
+
 ```

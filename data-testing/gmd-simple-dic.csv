@@ -1,0 +1,224 @@
+variable,value,label
+code,1,ALB
+code,2,AGO
+code,3,ARG
+code,4,ARM
+code,5,AUT
+code,6,AZE
+code,7,BDI
+code,8,BEN
+code,9,BEL
+code,10,BFA
+code,11,BGD
+code,12,BGR
+code,13,BLZ
+code,14,BIH
+code,15,BLR
+code,16,BOL
+code,17,BRA
+code,18,BRB
+code,19,BTN
+code,20,BWA
+code,21,CAF
+code,22,CHE
+code,23,CHL
+code,24,CIV
+code,25,CMR
+code,26,COD
+code,27,COG
+code,28,COL
+code,29,COM
+code,30,CPV
+code,31,CRI
+code,32,CYP
+code,33,CZE
+code,34,DNK
+code,35,DJI
+code,36,DOM
+code,37,ECU
+code,38,EGY
+code,39,ESP
+code,40,EST
+code,41,ETH
+code,42,FIN
+code,43,FJI
+code,44,FRA
+code,45,FSM
+code,46,GAB
+code,47,GEO
+code,48,GHA
+code,49,GMB
+code,50,GIN
+code,51,GNB
+code,52,GNQ
+code,53,GRD
+code,54,GRC
+code,55,GTM
+code,56,HND
+code,57,HRV
+code,58,HTI
+code,59,HUN
+code,60,IDN
+code,61,IND
+code,62,IRL
+code,63,IRN
+code,64,IRQ
+code,65,ISL
+code,66,ITA
+code,67,JAM
+code,68,JOR
+code,69,KAZ
+code,70,KEN
+code,71,KGZ
+code,72,KIR
+code,73,LAO
+code,74,LBN
+code,75,LBR
+code,76,LCA
+code,77,LSO
+code,78,LKA
+code,79,LTU
+code,80,LUX
+code,81,LVA
+code,82,MAR
+code,83,MDA
+code,84,MDG
+code,85,MDV
+code,86,MEX
+code,87,MHL
+code,88,MKD
+code,89,MLI
+code,90,MLT
+code,91,MMR
+code,92,MNE
+code,93,MNG
+code,94,MOZ
+code,95,MUS
+code,96,MRT
+code,97,MWI
+code,98,MYS
+code,99,NER
+code,100,NAM
+code,101,NGA
+code,102,NIC
+code,103,NLD
+code,104,NOR
+code,105,NRU
+code,106,NPL
+code,107,PAK
+code,108,PAN
+code,109,PER
+code,110,PHL
+code,111,PNG
+code,112,POL
+code,113,PRT
+code,114,PRY
+code,115,PSE
+code,116,ROU
+code,117,RUS
+code,118,SDN
+code,119,RWA
+code,120,SEN
+code,121,SLB
+code,122,SLE
+code,123,SLV
+code,124,SRB
+code,125,SSD
+code,126,STP
+code,127,SUR
+code,128,SVK
+code,129,SVN
+code,130,SYC
+code,131,SWZ
+code,132,SWE
+code,133,TCD
+code,134,TGO
+code,135,THA
+code,136,TJK
+code,137,TON
+code,138,TLS
+code,139,TUN
+code,140,TUV
+code,141,TUR
+code,142,TZA
+code,143,UGA
+code,144,UKR
+code,145,URY
+code,146,UZB
+code,147,VNM
+code,148,VUT
+code,149,WSM
+code,150,XKX
+code,151,YEM
+code,152,ZAF
+code,153,ZMB
+code,154,ZWE
+school,1,No
+school,2,Yes
+school,3,Missing
+educat4,1,No education
+educat4,2,Primary (complete or incomplete)
+educat4,3,Secondary (complete or incomplete)
+educat4,4,Tertiary (complete or incomplete)
+educat4,5,Missing
+educat5,1,No education
+educat5,2,Primary incomplete
+educat5,3,Primary complete but secondary incomplete
+educat5,4,Secondary complete
+educat5,5,Some tertiary/post-secondary
+educat5,6,Missing
+educat7,1,No education
+educat7,2,Primary incomplete
+educat7,3,Primary complete
+educat7,4,Secondary incomplete
+educat7,5,Secondary complete
+educat7,6,Higher than secondary but not university
+educat7,7,University incomplete or complete
+educat7,8,Missing
+marital,1,Married
+marital,2,Never married
+marital,3,Living together
+marital,4,Divorced/separated
+marital,5,Widowed
+marital,6,Missing
+lstatus,1,Employed
+lstatus,2,Unemployed
+lstatus,3,Out of labor force
+lstatus,4,Missing
+empstat,1,Paid Employee
+empstat,2,Non-Paid Employee/family worker
+empstat,3,Employer
+empstat,4,Self-employed
+empstat,5,"Other, not classifiable"
+empstat,6,Missing
+industrycat4,1,Agriculture
+industrycat4,2,Industry
+industrycat4,3,Services
+industrycat4,4,Other
+industrycat4,5,Missing
+industrycat10,1,"Agriculture, Hunting, Fishing, etc."
+industrycat10,2,Mining
+industrycat10,3,Manufacturing
+industrycat10,4,Public Utility Services
+industrycat10,5,Construction
+industrycat10,6,Commerce
+industrycat10,7,Transport and Communications
+industrycat10,8,Financial and Business Services
+industrycat10,9,Public Administration
+industrycat10,10,"Others Services, Unspecified"
+industrycat10,11,Missing
+cellphone,1,No
+cellphone,2,Yes
+cellphone,3,Missing
+computer,1,No
+computer,2,Yes
+computer,3,Missing
+electricity,1,No
+electricity,2,Yes
+electricity,3,Missing
+male,1,Female
+male,2,Male
+male,3,Missing
+urban,1,Rural
+urban,2,Urban
+urban,3,Missing
