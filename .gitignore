@@ -16,3 +16,4 @@ man/
 *.html
 *_files
 .vdoc*.r
+*.rds

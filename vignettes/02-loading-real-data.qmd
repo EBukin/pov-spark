@@ -1,0 +1,143 @@
+---
+title: "Loading data"
+format: html
+editor: source
+---
+
+```{r setup}
+# Data generation for testing purposes
+library(dplyr)
+library(haven)
+library(forcats)
+library(readr)
+library(arrow)
+library(purrr)
+library(data.table)
+library(collapse)
+
+```
+
+
+```{r reload-data, eval=FALSE}
+dta <-
+  Sys.getenv("POVSPARK_DATA") |>
+  file.path("ALL_final_vars", "ALL_final_vars.dta") |>
+  haven::read_dta(n_max = 10e6)
+
+dta |> readr::write_rds("data-temp/ALL_final_vars.rds")
+```
+
+```{r clean-save-data, eval=FALSE}
+dta <- readr::read_rds("data-temp/ALL_final_vars.rds")
+dta <- qDT(dta)
+
+var_classes <- sapply(dta, class)
+labelled_vars <- keep(var_classes, ~ "haven_labelled" %in% .x) |> names()
+# labelled_vars <- labelled_vars[1:2]
+
+# Modify 'labelled_vars' to convert to factors with "Missing" level for NAs
+# Use data table syntax for efficiency and avoid copying the entire dataset multiple times
+dta[,
+  (labelled_vars) := lapply(.SD, function(x) {
+    gc()
+    haven::as_factor(x) |> forcats::fct_na_value_to_level("Missing")
+  }),
+  .SDcols = labelled_vars
+]
+
+# Sort the dataset by country and year
+setorder(dta, code, year)
+
+# Save data as parquet dataset groupping by country for faster loading
+dta |>
+  arrow::write_dataset(
+    path = "data-testing/gmd-full",
+    format = "parquet",
+    partitioning = "code"
+  )
+```
+
+
+## Simplifying data 
+
+```{r simplify-data, eval=FALSE}
+dta_0 <- open_dataset("data-testing/gmd")
+dta_0 |> glimpse()
+
+vars_focus <- c(
+  "code",
+  "year",
+  "welfare",
+  "weight_h",
+  "weight_p",
+  "cpi2021",
+  "icp2021",
+  educat4,
+  educat5,
+  educat7
+  "urb_rur"
+)
+
+
+dta_0 |>
+  mutate(
+    welfppp = welfare / cpi2021 / icp2021 / 365
+  ) |>
+  filter(welfppp > 0, !is.na(welfppp)) |> 
+  mutate(
+    welfppp = if_else(welfppp <= 0.28, 0.28, welfppp, welfppp)
+  )
+```
+
+
+## Resaving data in duckdb format
+
+```{r duck-db-setup, eval=FALSE}
+library(arrow)
+library(dplyr, warn.conflicts = FALSE)
+library(DBI)
+library(duckdb)
+library(dbplyr)
+library(duckplyr)
+library(here)
+library(glue)
+
+
+pkt_fldr <- here("data-testing")
+duck_fldr <- here("data-testing-duck")
+dir.create(duck_fldr)
+
+
+from_file <- list.dirs(pkt_fldr, recursive = FALSE, full.names = F) |> sort()
+from_pkt <- from_file[[2]]
+
+# duck_dr <- duckdb(file.path("data-testing-duck", paste(from_pkt, ".duckdb")))
+# con <- dbConnect(duck_dr)
+
+# dbGetQuery(conn = con, "SELECT current_setting('threads') AS threads")
+# dbGetQuery(conn = con, "SELECT current_setting('memory_limit') AS memlimit")
+
+# tbl_nm <- from_pkt
+pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+
+reloar_q <- "
+DROP TABLE IF EXISTS dta;
+CREATE TABLE dta AS SELECT * FROM read_parquet('{pqt_path}');
+ANALYZE dta;
+VACUUM;
+"
+
+from_file |>
+  purrr::walk(
+    ~ {
+      from_pkt <- .x
+      duck_dr <- duckdb(file.path("data-testing-duck", paste0(from_pkt, ".duckdb")))
+      con <- dbConnect(duck_dr)
+      tbl_nm <- from_pkt
+      pqt_path <- file.path(pkt_fldr, from_pkt, "**/*.parquet")
+
+      dbExecute(con, statement = glue(reloar_q))
+      dbDisconnect(con, shutdown = TRUE)
+    }
+  )
+```
