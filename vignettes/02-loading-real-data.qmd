@@ -61,7 +61,7 @@ dta |>
 ## Simplifying data 
 
 ```{r simplify-data, eval=FALSE}
-dta_0 <- open_dataset("data-testing/gmd")
+dta_0 <- open_dataset("data-testing/gmd-full")
 dta_0 |> glimpse()
 
 vars_focus <- c(
@@ -72,20 +72,74 @@ vars_focus <- c(
   "weight_p",
   "cpi2021",
   "icp2021",
-  educat4,
-  educat5,
-  educat7
-  "urb_rur"
+  "school",
+  "educat4",
+  "educat5",
+  "educat7",
+  "marital",
+  "lstatus",
+  "empstat",
+  "industrycat4",
+  "industrycat10",
+  "cellphone",
+  "computer",
+  "electricity",
+  "male",
+  "urban"
 )
 
-
-dta_0 |>
+dta_full <-
+  dta_0 |>
+  select(all_of(vars_focus)) |>
+  filter(!code == "") |>
   mutate(
     welfppp = welfare / cpi2021 / icp2021 / 365
   ) |>
-  filter(welfppp > 0, !is.na(welfppp)) |> 
+  filter(welfppp > 0, !is.na(welfppp)) |>
   mutate(
     welfppp = if_else(welfppp <= 0.28, 0.28, welfppp, welfppp)
+  ) |>
+  select(
+    -welfare,
+    -cpi2021,
+    -icp2021
+  ) |>
+  collect() |>
+  mutate(code = as_factor(code), year = as.integer(year)) |>
+  qDT()
+
+# based in each factor variable in dta_full, create a table disctionary of the levels with three columns: # variable name, level value, level label
+dta_dic <- list()
+for (var in names(dta_full)) {
+  if (is.factor(dta_full[[var]])) {
+    levels_var <- levels(dta_full[[var]])
+    dta_dic[[var]] <- data.frame(
+      variable = var,
+      value = seq_along(levels_var),
+      label = levels_var
+    )
+  }
+}
+
+dta_dic <- bind_rows(dta_dic)
+dta_dic |> readr::write_csv("data-testing/gmd-simple-dic.csv")
+
+# Convert each factor variable to integer using collapse and data.table
+factor_vars <- names(dta_full)[sapply(dta_full, is.factor)]
+dta_full[, (factor_vars) := lapply(.SD, as.integer), .SDcols = factor_vars]
+
+# Sort data by country and year and welfppp
+setorder(dta_full, code, year, welfppp)
+
+# Check if there are any NA
+sapply(dta_full, function(x) sum(is.na(x)))
+
+# Save simplified data
+dta_full |>
+  arrow::write_dataset(
+    path = "data-testing/gmd-simple",
+    format = "parquet",
+    partitioning = "code"
   )
 ```
 
