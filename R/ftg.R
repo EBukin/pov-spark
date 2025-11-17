@@ -109,7 +109,7 @@ get_pov__dplyr_gini <- function(dta, pl) {
 }
 
 
-get_pov__dplyr_nogini <- function(dta, pl) {
+get_pov__dplyr_nogini <- function(dta, pl, groups = c("country", "year")) {
   dta  |>
   mutate(
     poor = as.integer(welfare <= pl),
@@ -122,7 +122,7 @@ get_pov__dplyr_nogini <- function(dta, pl) {
     .groups = "drop"
   ) |> 
   mutate(ftg2 = ftg1 ^ 2) |> 
-  select(country, year, hc = hc0, ftg0, ftg1, ftg2)
+  select(any_of(groups), hc = hc0, ftg0, ftg1, ftg2)
 }
 
 
@@ -198,7 +198,7 @@ get_pov__DT_nogini <- function(dta, pl, groups = c("country", "year")) {
       ftg1 = wmax / weight / pl,
       ftg2 = ftg1 ^ 2
     ) |> 
-    fselect(country, year, hc, ftg0, ftg1, ftg2) 
+    get_vars(c(groups, "hc", "ftg0", "ftg1", "ftg2"))
 }
 
 
