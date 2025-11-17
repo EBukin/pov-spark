@@ -1,0 +1,330 @@
+---
+title: "Real data usecase: poverty and gini"
+editor: source
+---
+
+```{r}
+pkgload::load_all()
+library(microbenchmark)
+library(here)
+library(bench)
+library(glue)
+```
+
+
+# Setup
+
+```{r}
+library(arrow)
+library(data.table)
+library(dplyr)
+library(collapse)
+
+# conflicts_prefer(dplyr::filter())
+setDTthreads(32)
+set_collapse(nthreads = 32)
+
+library(DBI)
+# library(dtplyr)
+library(duckdb)
+library(dbplyr)
+# library(duckplyr)
+library(tidyr)
+```
+
+# Data connection
+
+## Duckdb premade data
+
+```{r}
+duck_dr <- duckdb(here("data-testing-duck/gmd-simple.duckdb"))
+con <- dbConnect(duck_dr)
+dbGetQuery(conn = con, "SELECT current_setting('threads') AS threads")
+dbGetQuery(conn = con, "SELECT current_setting('memory_limit') AS memlimit")
+# List all tables in the connection
+dbListTables(con)
+dta <- tbl(con, "dta") |> rename(country = code, welfare = welfppp)
+dic <- tbl(con, "dic") |> collect() 
+```
+
+Consist of the data itself (`dta`) and a dictionary (`dic`) with metadata.
+
+```{r}
+dta |> glimpse()
+```
+
+```{r}
+dic |> glimpse()
+```
+
+## Arrow premade data
+
+This is the same data as above, but stored in an Arrow dataset.
+```{r}
+dta_arrow <- open_dataset(here("data-testing/gmd-simple")) |> 
+  rename(country = code, welfare = welfppp)
+dta_arrow |> glimpse()
+```
+
+# Test logic
+
+We will randomly filter countries from the data and then group by several variables to compute poverty and gini coefficients. Groupping vraiables are fixed for all tests. 
+
+```{r}
+test_vars <- c("country", "year", "school",  "marital", "urban", "male")
+```
+
+`get_random_code()` function samples random country (or other variables) codes from the dictionary.
+
+```{r}
+get_random_code <- function(n = 1, variable = "code") {
+  dic |>
+    filter(variable == variable) |>
+    slice_sample(n = n) |>
+    pull(value) |>
+    as.integer()
+}
+get_random_code(10)
+
+filter_dta <- function(dta, n = 10) {
+  codes <- get_random_code(n, "code")
+  dta |> filter(country %in% codes)
+}
+
+group_dta <- function(dta) {
+  vars <- test_vars
+  dta |>
+    group_by(across(all_of(vars)))
+}
+```
+
+## Generic poverty and gini functions
+
+```{r}
+get_fgt_dplyr <- function(dta, pl, groups = c("country", "year")) {
+  dta |>
+    mutate(
+      poor = as.integer(welfare <= pl),
+      dist = 1 - (welfare / pl),
+      hc = poor * weight
+    ) |>
+    summarise(
+      hc0 = sum(hc),
+      fgt0 = sum(hc) / sum(weight),
+      fgt1 = sum(hc * dist) / sum(weight),
+      fgt2 = sum(hc * dist^2) / sum(weight),
+      .groups = "drop"
+    ) |>
+    select(any_of(groups), fgt0, fgt1, fgt2)
+}
+
+get_gini_dplyr <- function(dta) {
+  dta |>
+    mutate(
+      wf_wt = welfare * weight,
+      wf_wt_lag = dplyr::lag(wf_wt, default = 0L)
+    ) |>
+    mutate(
+      wf_wt_lag_cumsum = (cumsum(wf_wt_lag) + (wf_wt / 2)) * weight
+    ) |>
+    summarise(
+      gini = 1 - (2 * ((sum(wf_wt_lag_cumsum) / sum(weight)) / sum(wf_wt))),
+      .groups = "drop"
+    )
+}
+
+
+get_fgt_collapse <- \(x, pl, group = c("country", "year")) {
+  x |>
+    fgroup_by(group) |>
+    fsummarise(
+      fgt0 = fgt_collapse(welfare, weight, povline = pl, alpha = 0),
+      fgt1 = fgt_collapse(welfare, weight, povline = pl, alpha = 1),
+      fgt2 = fgt_collapse(welfare, weight, povline = pl, alpha = 2)
+    )
+}
+
+get_gini_collapse <- \(x, group = c("country", "year")) {
+  x |>
+    fgroup_by(group) |>
+    fsummarise(gini = gini_collapse(welfare, weight))
+}
+```
+
+
+## DUCKDB: Random Filter + Group ~ Poverty + Gini
+
+```{r}
+# Poverty
+set.seed(13)
+dta |>
+  filter_dta() |>
+  group_dta() |>   
+  get_fgt_dplyr(pl = 10, groups = test_vars) |>
+  explain()
+
+fgt_duckdb_random <- function(dta, n = 10) {
+  dta |>
+    filter_dta(n) |>
+    group_dta() |>
+    get_fgt_dplyr(pl = 10, groups = test_vars) |>
+    collect() |> 
+    arrange(across(all_of(test_vars)))
+}
+
+set.seed(13)
+fgt_duckdb <- fgt_duckdb_random(dta)
+fgt_duckdb |> glimpse()
+
+# Gini
+dta |>
+  filter_dta() |>
+  group_dta() |>   
+  get_gini_dplyr() |>
+  explain()
+
+gini_duckdb_random <- function(dta, n = 10) {
+  dta |>
+    filter_dta(n) |>
+    group_dta() |>
+    window_order(`country`, `year`, `school`, `marital`, `urban`,  welfare) |> 
+    get_gini_dplyr() |>
+    collect() |> 
+    arrange(across(all_of(test_vars)))
+}
+
+set.seed(13)
+gini_duckdb <- gini_duckdb_random(dta)
+gini_duckdb |> glimpse()
+```
+
+## DUCKDB+DT: Random Filter + Group ~ Poverty + Gini
+
+```{r}
+duckdb_dt_collect <- function(dta, n = 10) {
+  dta |>
+    filter_dta(n) |>
+    collect()
+}
+
+set.seed(13)
+duckdb_dt <- 
+  duckdb_dt_collect(dta, n = 1) |>
+  arrange(across(all_of(test_vars)))
+
+# Poverty
+fgt_duckdb_DT_random <- function(dta, n = 10) {
+  duckdb_dt_collect(dta, n) |>
+    get_fgt_collapse(pl = 10, group = test_vars)
+}
+
+set.seed(13)
+fgt_duckdb_dt <- fgt_duckdb_DT_random(dta) |> mutate(country = as.integer(country))
+all.equal(as.data.frame(fgt_duckdb), as.data.frame(fgt_duckdb_dt))
+fgt_duckdb_dt |> glimpse()
+
+# Gini
+gini_duckdb_DT_random <- function(dta, n = 10) {
+  duckdb_dt_collect(dta, n) |>
+    fgroup_by(test_vars) |>
+    fsummarise(gini = gini_collapse(welfare, weight))
+}
+
+set.seed(13)
+gini_duckdb_dt <- gini_duckdb_DT_random(dta) |> mutate(country = as.integer(country))
+all.equal(as.data.frame(gini_duckdb), as.data.frame(gini_duckdb_dt))
+gini_duckdb_dt |> glimpse()
+```
+
+## Arrow+DT: Random Filter + Group ~ Poverty + Gini
+
+```{r}
+arrow_dt_collect <- function(dta = dta_arrow, n = 10) {
+  duckdb_dt_collect(dta, n)
+}
+
+set.seed(13)
+arrow_dt <-
+  arrow_dt_collect(dta_arrow, n = 1) |> 
+  arrange(across(all_of(test_vars)))
+all.equal(as_tibble(arrow_dt), duckdb_dt)
+
+# Arrow+DT: Random Filter + Group -------------------------------------------
+fgt_arrow_DT_random <- function(dta = dta_arrow, n = 10) {
+  dta |> fgt_duckdb_DT_random(n)
+}
+
+set.seed(13)
+fgt_arrow_dt <- fgt_arrow_DT_random(dta_arrow)
+all.equal(as.data.frame(fgt_duckdb_dt), as.data.frame(fgt_arrow_dt))
+diffdf::diffdf(fgt_duckdb_dt, fgt_arrow_dt, keys = test_vars)
+
+gini_arrow_DT_random <- function(dta = dta_arrow, n = 10) {
+  dta |> gini_duckdb_DT_random(n)
+}
+
+set.seed(13)
+gini_arrow_dt <- gini_arrow_DT_random(dta_arrow)
+all.equal(as.data.frame(gini_duckdb_dt), as.data.frame(gini_arrow_dt))
+```
+
+# Benchmarking
+
+```{r eval= FALSE}
+# Benchmarking with different random samples (1 country all years) -------------------------------
+run_mbench <- function(nn = 1) {
+  microbenchmark(
+    collect_duckdb = duckdb_dt_collect(dta, nn),
+    collect_arrow = arrow_dt_collect(dta, nn),
+
+    fgt_duckdb = fgt_duckdb_random(dta, nn),
+    fgt_duckdb_dt = fgt_duckdb_DT_random(dta, nn),
+    fgt_arrow_dt = fgt_arrow_DT_random(dta_arrow, nn),
+
+    gini_duckdb = gini_duckdb_random(dta, nn),
+    gini_duckdb_dt = gini_duckdb_DT_random(dta, nn),
+    gini_arrow_dt = gini_arrow_DT_random(dta_arrow, nn),
+
+    setup = set.seed(124),
+    times = 5
+  )
+}
+
+run_mbench(1)
+# Unit: milliseconds
+#            expr      min       lq      mean   median       uq      max neval
+#  collect_duckdb  60.7686  62.4341  63.06326  63.1785  63.5231  65.4120     5
+#   collect_arrow  60.3937  62.5104  64.26734  64.4067  65.1603  68.8656     5
+#      fgt_duckdb 309.0278 313.1453 317.06650 316.9783 319.7817 326.3994     5
+#   fgt_duckdb_dt  80.3320  81.1600  84.97012  81.1764  85.5026  96.6796     5
+#    fgt_arrow_dt  50.1352  50.8946  51.73830  51.0859  53.1732  53.4026     5
+#     gini_duckdb 448.0199 458.5088 462.81504 464.8896 469.4587 473.1982     5
+#  gini_duckdb_dt  68.0199  69.0263  69.76458  69.2250  69.8032  72.7485     5
+#   gini_arrow_dt  41.3503  41.4197  42.17530  41.9515  42.0582  44.0968     5
+
+
+run_mbench(10)
+# Unit: milliseconds
+#            expr       min        lq      mean    median        uq       max neval
+#  collect_duckdb  147.5705  163.7375  271.0034  341.7577  342.6348  359.3167     5
+#   collect_arrow  143.5683  151.6965  264.3854  338.5141  340.0391  348.1092     5
+#      fgt_duckdb  338.7458  341.8184  347.8371  343.5299  346.9862  368.1051     5
+#   fgt_duckdb_dt  424.1124  604.2187  578.3398  605.5559  618.3777  639.4343     5
+#    fgt_arrow_dt  314.6256  515.2605  480.3940  519.6455  520.7376  531.7010     5
+#     gini_duckdb 2580.7767 2764.0168 2809.8851 2765.4615 2812.0169 3127.1535     5
+#  gini_duckdb_dt  315.7118  493.3633  474.5590  501.5712  515.7145  546.4341     5
+#   gini_arrow_dt  217.0963  394.8913  372.5808  402.6376  408.7145  439.5642     5
+
+run_mbench(25)
+# Unit: milliseconds
+#            expr       min        lq      mean    median         uq        max neval
+#  collect_duckdb  629.1955  632.3169  645.2077  634.5453   639.9797   690.0011     5
+#   collect_arrow  435.8500  482.4781  557.9168  613.0171   623.9743   634.2646     5
+#      fgt_duckdb  392.6833  399.8392  403.2526  406.0094   407.1924   410.5389     5
+#   fgt_duckdb_dt 1952.9755 2121.7848 2175.4044 2131.4618  2146.7036  2524.0963     5
+#    fgt_arrow_dt 1401.1118 1615.6673 1618.9334 1646.4519  1705.4905  1725.9455     5
+#     gini_duckdb 7310.0419 9544.6140 9444.7863 9646.1417 10101.9435 10621.1905     5
+#  gini_duckdb_dt 1174.6428 1300.6358 1320.0227 1309.2122  1363.3102  1452.3125     5
+#   gini_arrow_dt  922.8692  923.1470 1004.3385  927.1103  1035.9342  1212.6320     5
+
+```

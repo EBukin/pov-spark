@@ -157,7 +157,7 @@ get_pov__DT <- function(dta, pl, groups = c("country", "year")) {
 }
 
 
-get_pov__DT_gini <- function(dta, pl, groups = c("country", "year")) {
+get_pov__DT_gini <- function(dta, groups = c("country", "year")) {
    dta[,
     `:=`(c( "gini1", "gini2"), {
       cum_pop <- cumsum(weight) / sum(weight)
@@ -176,11 +176,12 @@ get_pov__DT_gini <- function(dta, pl, groups = c("country", "year")) {
     fmutate(
       gini = gini1 - gini2
     ) |> 
-    fselect(country, year, gini)
+    get_vars(c(groups, "gini"))
 }
 
 get_pov__DT_nogini <- function(dta, pl, groups = c("country", "year")) {
-  dta[,
+  dta1 <- copy(dta)
+  dta1[,
     `:=`(c("poor", "hc", "wmax"), {
       poor <- welfare <= pl
       hc <- poor * weight

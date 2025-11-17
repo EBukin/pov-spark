@@ -25,6 +25,14 @@ quarto_render(
 )
 
 
+quarto_render(
+  input = "vignettes/15-efficient-pov-ra-real-dta.qmd",
+  output_format = "html",
+  execute_params = list(),
+  quiet = FALSE
+)
+
+
 
 
 
